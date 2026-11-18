@@ -5,6 +5,7 @@ description = "Rogue Loot - 2-player co-op pixel-art action game"
 requires-python = ">=3.12"
 dependencies = [
     "pygame>=2.6",
+    "pyserial>=3.5",
 ]
 
 [dependency-groups]

@@ -138,7 +138,7 @@ ENEMY = {("skeleton", 0): [skeleton_frame(i) for i in range(4)], ("brute", 0): [
 for _a, _c in enumerate(SLIME_COL):
     ENEMY[("slime", _a)] = [slime_frame(i, _c) for i in range(2)]
 ENEMY.update(build_extra())
-CORPSE = {k: pygame.transform.rotate(v[0], 90) for k, v in ENEMY.items()}
+CORPSE = {k: (pygame.transform.rotate(v[0], 90) if v[0].get_height() >= v[0].get_width() else v[0]) for k, v in ENEMY.items()}
 
 MIMIC = pygame.Surface((16, 14), pygame.SRCALPHA)
 box(MIMIC, BROWN, 0, 6, 16, 8); box(MIMIC, BROWN, 0, 0, 16, 4); pygame.draw.rect(MIMIC, INK, (1, 4, 14, 3))

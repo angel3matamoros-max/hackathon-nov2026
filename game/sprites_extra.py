@@ -129,7 +129,88 @@ def drone_frame(i):
     return outlined(s)
 
 
-# kind -> (builder args). bosses are scaled humanoids with extras.
+BOSS_K = 2.5  # boss sprites are the humanoid frame scaled 2.5x, then decorated at full resolution
+PAD = 14  # side / top margin around a boss sprite (cape, halo, horns)
+PADB = 12  # bottom margin (robe tail, saucer); the arena draws bosses PADB lower so the feet stand on the floor
+
+
+def boss_sprite(src, i, deco):
+    """Big boss frame: scaled humanoid with a back layer (cape / mane / saucer) and a front layer (crown / glow) drawn at full resolution."""
+    raw = humanoid_raw(i, src, "boss")
+    w, h = round(raw.get_width() * BOSS_K), round(raw.get_height() * BOSS_K)
+    body = pygame.transform.scale(raw, (w, h))
+    out = pygame.Surface((w + 2 * PAD, h + PAD + PADB), pygame.SRCALPHA)
+    bob = i % 2
+    deco(out, w, h, i, bob, "back")
+    out.blit(body, (PAD, PAD))
+    deco(out, w, h, i, bob, "front")
+    return outlined(out)
+
+
+def _gravekeeper(s, w, h, i, bob, layer):
+    cx = PAD + w // 2
+    if layer == "back":
+        pygame.draw.polygon(s, (52, 66, 56), [(cx - 6, PAD + h * 0.3), (cx - 44, PAD + h + 6), (cx - 26 + (i % 2) * 3, PAD + h - 4), (cx - 12, PAD + h + 8), (cx + 10, PAD + h - 3)])
+        pygame.draw.polygon(s, (34, 44, 38), [(cx - 6, PAD + h * 0.3), (cx - 44, PAD + h + 6), (cx - 38, PAD + h - 14)])
+    else:
+        for ex in (cx - 9, cx + 2): pygame.draw.rect(s, (120, 255, 130), (ex, PAD + 14 + bob * 2, 5, 4))
+        for k in range(3): pygame.draw.line(s, STEEL_D, (cx - 4 + k * 4, PAD + h * 0.55), (cx - 8 + k * 5, PAD + h * 0.55 + 12), 2)  # chains
+
+
+def _beastlord(s, w, h, i, bob, layer):
+    cx = PAD + w // 2
+    if layer == "back":
+        for k in range(7):  # mane
+            a = math.radians(-160 + k * 23)
+            pygame.draw.polygon(s, (160, 100, 56), [(cx - 6, PAD + 22), (cx - 6 + math.cos(a) * 34, PAD + 22 + math.sin(a) * 30 - 6), (cx - 6 + math.cos(a + .35) * 22, PAD + 22 + math.sin(a + .35) * 20)])
+    else:
+        pygame.draw.polygon(s, (190, 190, 200), [(cx - 16, PAD + 8), (cx - 22, PAD - 8), (cx - 10, PAD + 2)])
+        pygame.draw.polygon(s, (190, 190, 200), [(cx + 10, PAD + 8), (cx + 18, PAD - 8), (cx + 4, PAD + 2)])  # horns
+        pygame.draw.rect(s, RED, (cx - 2, PAD + 30, 3, 10)); pygame.draw.rect(s, RED, (cx + 5, PAD + 32, 3, 8))  # war paint
+
+
+def _paladin(s, w, h, i, bob, layer):
+    cx = PAD + w // 2
+    if layer == "back":
+        pygame.draw.polygon(s, (170, 36, 56), [(cx - 10, PAD + h * 0.28), (cx - 42, PAD + h + 4), (cx - 28 + (i % 2) * 2, PAD + h - 2), (cx - 4, PAD + h + 6)])
+        pygame.draw.ellipse(s, GOLD, (cx - 22, PAD - 12, 44, 14), 2)  # halo
+    else:
+        pygame.draw.rect(s, GOLD, (cx - 24, PAD + h * 0.34, 12, 6)); pygame.draw.rect(s, GOLD, (cx + 6, PAD + h * 0.34, 12, 6))  # pauldrons
+
+
+def _archlich(s, w, h, i, bob, layer):
+    cx = PAD + w // 2
+    if layer == "back":
+        for k in range(5):  # spectral robe tail
+            pygame.draw.polygon(s, (90 + k * 6, 50, 140), [(cx - 24 + k * 12, PAD + h - 14), (cx - 18 + k * 12, PAD + h + 10 + ((i + k) % 2) * 4), (cx - 12 + k * 12, PAD + h - 14)])
+    else:
+        pygame.draw.circle(s, (30, 120, 70), (cx - 2, int(PAD + h * 0.5)), 9)
+        pygame.draw.circle(s, INK, (cx - 2, int(PAD + h * 0.5)), 7); pygame.draw.circle(s, (110, 240, 150), (cx - 2, int(PAD + h * 0.5)), 5); pygame.draw.circle(s, WHITE, (cx - 3, int(PAD + h * 0.5) - 1), 2)
+
+
+def _don(s, w, h, i, bob, layer):
+    cx = PAD + w // 2
+    if layer == "back":
+        pygame.draw.polygon(s, (28, 28, 38), [(cx - 12, PAD + h * 0.32), (cx - 36, PAD + h), (cx - 8, PAD + h - 8)])
+    else:
+        pygame.draw.rect(s, GOLD, (cx - 8, PAD + h * 0.36, 16, 3)); pygame.draw.rect(s, GOLD, (cx - 1, PAD + h * 0.36, 3, 12))  # gold chain + dollar bar
+        pygame.draw.rect(s, (255, 150, 60), (cx + 15, PAD + 26, 8, 3)); pygame.draw.rect(s, (255, 90, 40), (cx + 22, PAD + 26, 3, 3))  # cigar
+
+
+def _tycoon(s, w, h, i, bob, layer):
+    cx = PAD + w // 2
+    if layer == "back":
+        pygame.draw.ellipse(s, (96, 108, 132), (cx - 40, PAD + h - 12, 80, 22)); pygame.draw.ellipse(s, (140, 150, 172), (cx - 40, PAD + h - 16, 80, 16))
+        for k in range(5): pygame.draw.rect(s, RED if (k + i) % 2 else YEL, (cx - 32 + k * 15, PAD + h - 1, 4, 4))
+    else:
+        pygame.draw.circle(s, (110, 230, 240), (cx + 2, PAD + 4), 10, 2)  # helmet glint
+        pygame.draw.line(s, STEEL, (cx - 16, PAD - 2), (cx - 22, PAD - 12), 2); pygame.draw.circle(s, RED, (cx - 22, PAD - 12), 3)  # antenna
+
+
+BOSS_DECO = dict(gravekeeper=("zombie", _gravekeeper), beastlord=("wolfman", _beastlord), paladin=("knight", _paladin),
+                 archlich=("lich", _archlich), don=("gunman", _don), tycoon=("alien", _tycoon))
+
+
 def build_extra():
     n = 4
     e = {}
@@ -137,10 +218,6 @@ def build_extra():
         e[(kind, 0)] = [hum(i, kind) for i in range(n)]
     e[("wolf", 0)] = [wolf_frame(i) for i in range(n)]
     e[("drone", 0)] = [drone_frame(i) for i in range(2)]
-    e[("gravekeeper", 0)] = [hum(i, "zombie", "boss", 1.5) for i in range(n)]
-    e[("beastlord", 0)] = [hum(i, "wolfman", "boss", 1.5) for i in range(n)]
-    e[("paladin", 0)] = [hum(i, "knight", "boss", 1.5) for i in range(n)]
-    e[("archlich", 0)] = [hum(i, "lich", "boss", 1.5) for i in range(n)]
-    e[("don", 0)] = [hum(i, "gunman", "boss", 1.5) for i in range(n)]
-    e[("tycoon", 0)] = [hum(i, "alien", "boss", 1.6) for i in range(n)]
+    for boss, (src, deco) in BOSS_DECO.items():
+        e[(boss, 0)] = [boss_sprite(src, i, deco) for i in range(n)]
     return e

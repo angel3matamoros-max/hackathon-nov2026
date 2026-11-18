@@ -12,7 +12,7 @@ class FakeMotion:
         s.reset()
 
     def reset(s):
-        s.jump_p = s.down_p = s.dash_p = s.slash_p = s.cast_p = s.cast2_p = s.flick = s.skip_p = False
+        s.jump_p = s.down_p = s.dash_p = s.slash_p = s.cast_p = s.cast2_p = s.flick = s.skip_p = s.gear_p = False
         s.swing = None
 
     def update(s, events, dt):  # parity with Motion.update; scripted callers set fields directly
@@ -21,7 +21,25 @@ class FakeMotion:
 
 class Bot:
     def __init__(s, skill="naive"):
-        s.skill, s.t = skill, 0.0
+        s.skill, s.t, s.cd = skill, 0.0, {}
+
+    def ready(s, p, name, every, first=0.0):
+        """True once per `every` seconds for this player+action. Real timers, so the bot plays the same at any frame rate
+        (the old `int(t*60) % N` scheme almost never fired for player 2 at 30 Hz)."""
+        due = s.cd.setdefault((p.i, name), first)
+        if s.t >= due:
+            s.cd[(p.i, name)] = s.t + every
+            return True
+        return False
+
+    def targets(s, arena):
+        """What a scripted hero attacks: living foes, plus the breakable boss props (gravestones, aegis orbs, crystals). While the boss is
+        immune, only the props that unlock it."""
+        foes = [e for e in arena.enemies if e.kind != "dummy" and e.hp > 0]
+        props = [q for q in arena.props if q.hp > 0 and q.kind in ("crystal", "orb", "tomb")]
+        boss = arena.boss
+        if props and boss and boss.hp > 0 and boss.invulnerable(): return props
+        return foes + props
 
     def drive(s, arena, mo, dt):
         """Fill the FakeMotions `mo` for one frame of `arena`."""
@@ -29,13 +47,13 @@ class Bot:
         t = s.t
         for m in mo:
             m.reset()
-        foes = [e for e in arena.enemies if e.kind != "dummy" and e.hp > 0]
+        foes = s.targets(arena)
         for p in arena.players:
             m = mo[p.i]
             m.axis, m.interact_h, m.block_h = 0, False, False
             if p.down: continue
             if arena.state == "chest":  # take whatever the chest offers
-                if arena.cm and arena.cm["p"] is p: m.swing = "left"; m.slash_p = int(t * 60) % 15 == 0
+                if arena.cm and arena.cm["p"] is p: m.swing = "left"; m.slash_p = s.ready(p, "chest", 0.25)
                 continue
             if arena.state == "loot":
                 m.slash_p = m.flick = True; m.shake = 1.0; m.swing = ("left", "right", "up", "down")[int(t * 4) % 4]
@@ -48,10 +66,10 @@ class Bot:
                 if s.skill == "careful" and e.state == "wind" and abs(dx) < 56 and (dx * p.face >= 0):
                     m.block_h = True
                     continue
-                if abs(dx) < 36 and int(t * 60) % 20 == p.i * 7: m.slash_p = True
-                if int(t * 60) % 180 == p.i * 31: m.cast_p = True
-                if int(t * 60) % 240 == 100 + p.i * 31: m.cast2_p = True
-                if e.y < p.y - 30 and int(t * 60) % 45 == 0: m.jump_p = True
+                if abs(dx) < 36 and s.ready(p, "slash", 0.34, p.i * 0.11): m.slash_p = True
+                if s.ready(p, "cast", 3.0, 0.5 + p.i * 0.5): m.cast_p = True
+                if s.ready(p, "cast2", 4.0, 1.7 + p.i * 0.5): m.cast2_p = True
+                if e.y < p.y - 30 and s.ready(p, "jump", 0.75): m.jump_p = True
             else:
                 near = [c for c in arena.corpses if not c["looted"]]
                 ch = arena.chest if (arena.chest and p.i not in arena.chest["used"]) else None
@@ -70,15 +88,15 @@ class Bot:
         for h in arena.hazards:
             if h["x0"] - 14 <= p.x <= h["x1"] + 14 and (h["warn"] > 0 or h["life"] > 0):
                 m.axis = 1 if p.x >= (h["x0"] + h["x1"]) / 2 else -1
-                if h["kind"] == "beam": m.jump_p = int(s.t * 60) % 12 == 0
-                m.dash_p = int(s.t * 60) % 25 == 0
+                if h["kind"] == "beam": m.jump_p = s.ready(p, "hjump", 0.2)
+                m.dash_p = s.ready(p, "hdash", 0.42)
                 return True
         for pr in arena.eprojs:
             if pr["blast"]:  # lobbed explosive: leave its landing zone
                 land_x = pr["x"] + pr["vx"] * max(0.0, (FLOOR - pr["y"]) / max(60.0, abs(pr["vy"]) + 200.0))
                 if abs(land_x - p.x) < pr["blast"] + 22:
                     m.axis = 1 if p.x >= land_x else -1
-                    m.dash_p = int(s.t * 60) % 20 == 0
+                    m.dash_p = s.ready(p, "ldash", 0.33)
                     return True
                 continue
             if abs(pr["x"] - p.x) < 90 and abs(pr["y"] - (p.y - 16)) < 24 and (pr["vx"] * (p.x - pr["x"]) > 0) and pr["kind"] != "wave":

@@ -2,6 +2,7 @@
 import random
 from .config import *
 from .classes import CLASSES
+from .items import mods, SLOTS
 
 
 def land(o, a):
@@ -34,27 +35,52 @@ class Player:
         s.hitset = set()
         s.travel = 0.0
         s.djumps = s.dashes = s.blocks = s.perfects = s.casts = s.casts2 = 0
-        s.weapon, s.dmg_taken, s.cd_mult, s.fly = None, 1.0, 1.0, False  # gear/curse/dev state
+        s.gear, s.dmg_taken, s.cd_mult, s.fly = dict.fromkeys(SLOTS), 1.0, 1.0, False  # gear / curse / dev state
+        s.speed, s.lifesteal, s.crit, s.thorns, s.block_window = 1.0, 0.0, 0.0, 0.0, 0.0
+        s.heal_acc = 0.0  # fractional lifesteal carried between hits
+        s.cpu, s.rooted = False, 0.0  # cpu: the solo-mode ally; rooted: held by grave hands (dash breaks free)
+
+    @property
+    def weapon(s):
+        return s.gear["weapon"]
+
+    def recompute(s):
+        """Fold the three equipped items into ATK / max HP / damage taken / cooldowns / perks. Keeps the HP ratio."""
+        d, m = CLASSES[s.cls], mods(s.gear.values())
+        if s.cpu: m["atk"] *= 0.6; m["cd_mult"] *= 1.5  # the CPU ally is an assistant: weaker hits, slower skills
+        s.atk = int(round((8 + d["atk"] * 2) * m["atk"]))
+        s.dmg_taken, s.cd_mult, s.speed = m["dmg_taken"], m["cd_mult"], m["speed"]
+        s.lifesteal, s.crit, s.thorns, s.block_window = m["lifesteal"], m["crit"], m["thorns"], m["block_window"]
+        new_max = max(1, int(round((d["hp"] * 12 + 12) * m["hp"])))
+        ratio = s.hp / s.maxhp if s.maxhp else 1.0
+        s.maxhp, s.hp = new_max, max(1, min(new_max, int(round(new_max * ratio)))) if not s.down else 0
+
+    def equip(s, it):
+        """Put item `it` into its slot (replacing what was there) and recompute stats."""
+        s.gear[it["slot"]] = it
+        s.recompute()
 
     def update(s, dt, m, a):
-        if s.down: return
+        if s.down:
+            s.rooted = 0.0
+            return
         if s.fly:  # dev-mode noclip flight
             s.x = max(10, min(W - 10, s.x + m.axis * 200 * dt)); s.y = max(30.0, min(float(FLOOR), s.y + (int(m.down_h) - int(m.jump_h)) * 200 * dt))
             s.vx = s.vy = 0.0; s.py = s.y
             if m.axis: s.face = m.axis
             return
-        for n in ("slash_cd", "cast_cd", "cast2_cd", "dash_cd", "inv", "stun", "drop", "flash", "coyote", "jbuf", "shield_t"):
+        for n in ("slash_cd", "cast_cd", "cast2_cd", "dash_cd", "inv", "stun", "drop", "flash", "coyote", "jbuf", "shield_t", "rooted"):
             setattr(s, n, max(0.0, getattr(s, n) - dt))
         if s.shield_t <= 0:
             s.shield = 0.0
         free = s.stun <= 0 and s.skill != "charge"
-        ax = m.axis if free else 0
+        ax = m.axis if free and s.rooted <= 0 else 0
         was = s.block
         s.block = bool(m.block_h) and free and s.dash_t <= 0 and s.slash_t <= 0
         s.block_t = (s.block_t + dt) if (s.block and was) else (0.0 if s.block else 9.0)
 
         # smoother acceleration + responsive air control
-        max_spd = 128 * (0.38 if s.block else 1.0)
+        max_spd = 128 * s.speed * (0.38 if s.block else 1.0)
         accel = 1350 if s.ground else 920
         if ax:
             s.face = ax
@@ -74,7 +100,7 @@ class Player:
 
         if free:
             # jump / coyote jump / wall jump / double jump
-            if s.jbuf > 0:
+            if s.jbuf > 0 and s.rooted <= 0:
                 if s.ground or s.coyote > 0:
                     s.vy, s.ground, s.coyote, s.jbuf, s.jumps = -345, False, 0.0, 0.0, 1
                     a.burst(s.x, s.y, WHITE, 5, 45)
@@ -91,13 +117,14 @@ class Player:
                     a.burst(s.x, s.y, WHITE, 8, 70)
             # variable jump cut when releasing jump early
             if not m.jump_h and s.vy < -130:
-                s.vy *= 0.65
+                s.vy *= 0.65 ** (dt * 60)  # per-frame cut made jump height depend on frame rate
             # drop through platform or fast-fall in air
             if m.down_p:
                 s.drop = 0.25
             if m.down_h and not s.ground and s.vy > 0:
                 s.vy = min(560, s.vy + 750 * dt)
             if m.dash_p and s.dash_cd <= 0:
+                s.rooted = 0.0
                 s.dash_t, s.dash_cd, s.inv, s.dashes = 0.18, 0.72, max(s.inv, 0.24), s.dashes + 1
                 if not s.ground:
                     s.vy = min(s.vy, 0.0)
@@ -127,7 +154,7 @@ class Player:
                 s.tick -= dt
                 if s.tick <= 0:
                     s.tick = 0.16
-                    a.hit_radius(s.x, s.y - 14, 38, s.atk * 0.75, 130)
+                    a.hit_radius(s.x, s.y - 14, 38, s.atk * 0.75, 130, by=s)
             if s.skill_t <= 0:
                 s.skill = None
 
@@ -159,7 +186,7 @@ class Player:
         if s.down or s.inv > 0 or getattr(a, 'god', False): return
         if s.block and sx is not None and (sx - s.x) * s.face >= 0:
             s.blocks += 1
-            if s.block_t < 0.2:
+            if s.block_t < 0.2 + s.block_window:
                 s.perfects += 1
                 if src is not None and hasattr(src, "stun"):
                     src.stun, src.state, src.st = 1.4 * src.stun_mult, "rest", 0.4
@@ -178,6 +205,8 @@ class Player:
             a.texts.append([s.x, s.y - 48, "SHIELDED", CYAN, 0.6])
         if dmg > 0:
             s.hp -= dmg
+            if s.thorns and src is not None and getattr(src, "hp", 0) > 0 and not getattr(src, "is_boss", False) and getattr(src, "kind", "") != "dummy":
+                src.hp -= s.thorns; src.flash = 0.1  # reflected damage; the arena's update loop handles the kill
             a.texts.append([s.x, s.y - 40, f"-{dmg}", (255, 90, 90), 0.8]); a.burst(s.x, s.y - 16, RED, 6, 90); a.shake = 3
         if s.hp <= 0:
             s.hp, s.down = 0, True
@@ -185,12 +214,9 @@ class Player:
 
 
 def apply_gear(p, w):
-    """Equip weapon dict `w` (or None to unequip) on player `p`: ATK multiplier plus any curse (hp / dmg_taken / cd_mult)."""
-    d = CLASSES[p.cls]
-    p.weapon = w
-    p.atk = int(round((8 + d["atk"] * 2) * (w["atk"] if w else 1.0)))
-    p.dmg_taken = w.get("dmg_taken", 1.0) if w else 1.0
-    p.cd_mult = w.get("cd_mult", 1.0) if w else 1.0
-    new_max = max(1, int(round((d["hp"] * 12 + 12) * (w.get("hp", 1.0) if w else 1.0))))
-    ratio = p.hp / p.maxhp if p.maxhp else 1.0
-    p.maxhp, p.hp = new_max, max(1, min(new_max, int(round(new_max * ratio))))
+    """Equip weapon-slot item `w` (or None to unequip the weapon). Kept for the holy chest and old callers."""
+    if w is None:
+        p.gear["weapon"] = None
+        p.recompute()
+    else:
+        p.equip(w if "slot" in w else dict(w, slot="weapon"))

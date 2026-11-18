@@ -83,6 +83,8 @@ def test_replaying_tutorial_from_menu_and_skipping_returns_to_menu(g):
 def test_skipped_tutorial_never_shows_again_on_start(g):
     config.SET["tutorial_done"] = True
     g.step(DT, [key(pygame.K_RETURN)])
+    assert g.mode == "players"
+    g.step(DT, [key(pygame.K_RETURN)])
     assert g.mode == "select"
 
 
@@ -95,7 +97,9 @@ def test_esc_leaves_tutorial_without_marking_done(g):
 # ------------------------------------------------------------------ level progression + cutscenes
 def start_game(g):
     config.SET["tutorial_done"] = True
-    g.step(DT, [key(pygame.K_RETURN)])
+    g.step(DT, [key(pygame.K_RETURN)])        # START -> players screen
+    assert g.mode == "players"
+    g.step(DT, [key(pygame.K_RETURN)])        # default: 2 players
     g.step(DT, [])
     for m in g.motions: m.slash_p = True
     g.step(DT, [])
@@ -150,7 +154,7 @@ def test_finishing_last_level_plays_ending_then_victory(g):
 def test_retry_after_defeat_keeps_level_tier_and_gear(g):
     start_game(g); run(g, 4)
     g.warp(3)
-    g.gear = [{"name": "x", "cursed": False, "atk": 1.25}, None]
+    g.gear = [{"weapon": {"name": "x", "slot": "weapon", "tier": 1, "cursed": False, "atk": 1.25}}, {}]
     g.arena = g.new_arena(3)
     for p in g.arena.players: p.down = True
     run(g, 0.5)
@@ -160,7 +164,7 @@ def test_retry_after_defeat_keeps_level_tier_and_gear(g):
     g.motions[0].slash_p = True
     g.step(DT, [])
     g.motions[0].reset()
-    assert g.arena.area == 3 and g.arena.tier == 3 and g.arena.state == "play" and g.arena.players[0].weapon == g.gear[0]
+    assert g.arena.area == 3 and g.arena.tier == 3 and g.arena.state == "play" and g.arena.players[0].weapon == g.gear[0]["weapon"]
 
 
 def test_defeat_discards_unbanked_loot(g):

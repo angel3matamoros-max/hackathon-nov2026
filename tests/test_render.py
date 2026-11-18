@@ -30,7 +30,7 @@ def test_chest_and_modal_draw_for_every_class(mk):
         a.update(1 / 60, mo)
         a.draw()
         for r in (0.1, 0.9):
-            a.cm = dict(p=a.players[0], offer=roll_holy(cls, type("R", (), {"random": lambda s, v=r: v})()), sel=0, t=1.0)
+            a.cm = dict(p=a.players[0], offers=[roll_holy(cls, type("R", (), {"random": lambda s, v=r: v})())] + a.chest_offers(a.players[0])[1:], sel=r > .5 and 3 or 0, t=1.0)
             a.state = "chest"
             a.draw()
         a.state = "play"

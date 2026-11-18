@@ -29,9 +29,9 @@ def mk():
     from game.qabot import FakeMotion
 
     def make(level=0, classes=("Knight", "Mage"), waves=False, **kw):
-        """waves=False clears the level's spawn queue so a test only sees the enemies it spawns itself."""
+        """waves=False clears the level's waves and spawn queue so a test only sees the enemies it spawns itself."""
         players = [Player(i, c, 80 + 30 * i) for i, c in enumerate(classes)]
         a = Arena(level, players, **kw)
-        if not waves: a.queue = []
+        if not waves: a.queue, a.waves = [], []
         return a, [FakeMotion(i) for i in range(len(players))]
     return make

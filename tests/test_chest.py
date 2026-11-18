@@ -53,8 +53,8 @@ def test_curse_effects_are_felt_in_play(mk):
     assert k.cast_cd == CLASSES["Knight"]["cd"]
 
 
-def kill_boss_and_chest(mk):
-    a, mo = mk(2)
+def kill_boss_and_chest(mk, level=2):
+    a, mo = mk(level)
     a.spawn_boss(); a.boss.hp = 0
     a.update(1 / 60, mo)
     return a, mo
@@ -67,31 +67,70 @@ def hold_loot(a, mo, p, secs=1.0):
     mo[p.i].interact_h = False
 
 
-def test_chest_modal_take_equips_leave_keeps(mk):
+def confirm(a, mo, p, swings=()):
+    a.update(0.6, mo)                                     # input is ignored for a short moment
+    for sw in swings:
+        mo[p.i].reset(); mo[p.i].swing = sw; a.update(1 / 60, mo)
+    mo[p.i].reset(); mo[p.i].slash_p = True
+    a.update(1 / 60, mo)
+    mo[p.i].reset()
+
+
+def test_boss_chest_offers_three_epic_or_better_items_one_per_slot(mk):
+    for lvl in (0, 1, 3):
+        a, mo = kill_boss_and_chest(mk, lvl)
+        for p in a.players: p.inv = 99
+        hold_loot(a, mo, a.players[0])
+        offers = a.cm["offers"]
+        assert a.state == "chest" and [o["slot"] for o in offers] == ["weapon", "armor", "charm"] and all(o["tier"] >= 2 for o in offers)
+        a.draw()                                          # modal renders
+
+
+def test_holy_cathedral_chest_has_the_holy_weapon_card(mk):
+    a, mo = kill_boss_and_chest(mk, 2)
+    for p in a.players: p.inv = 99
+    hold_loot(a, mo, a.players[0])
+    w = a.cm["offers"][0]
+    assert w["slot"] == "weapon" and w["name"] in (HOLY["Knight"]["name"], HOLY["Knight"]["cursed"])
+
+
+def test_chest_take_equips_leave_keeps_and_cannot_roll_twice(mk):
     a, mo = kill_boss_and_chest(mk)
     for p in a.players: p.inv = 99
     random.seed(1)
     hold_loot(a, mo, a.players[0])
     assert a.state == "chest" and a.cm["p"] is a.players[0]
-    offer = a.cm["offer"]
-    a.draw()                                              # modal renders
-    a.update(0.6, mo)                                     # input is ignored for a short moment
-    mo[0].reset(); mo[0].swing = "left"; mo[0].slash_p = True
-    a.update(1 / 60, mo)
-    assert a.state == "play" and a.players[0].weapon == offer and 0 in a.chest["used"]
-    # second player leaves theirs
-    hold_loot(a, mo, a.players[1])
+    offers = a.cm["offers"]
+    confirm(a, mo, a.players[0], swings=("right",))        # take the 2nd card (armor)
+    assert a.state == "play" and a.players[0].gear["armor"] == offers[1] and 0 in a.chest["used"]
+    hold_loot(a, mo, a.players[1])                         # second hero leaves theirs (LEAVE is the slot after the 3 cards)
     assert a.state == "chest"
-    a.update(0.6, mo)
-    mo[1].reset(); mo[1].swing = "right"; mo[1].slash_p = True
-    a.update(1 / 60, mo)
-    assert a.state == "play" and a.players[1].weapon is None and 1 in a.chest["used"]
+    confirm(a, mo, a.players[1], swings=("right", "right", "right"))
+    assert a.state == "play" and not any(a.players[1].gear.values()) and 1 in a.chest["used"]
     hold_loot(a, mo, a.players[1])
     assert a.state == "play"                              # a chest can't be rolled twice by the same player
 
 
+def test_chest_selection_is_clamped(mk):
+    a, mo = kill_boss_and_chest(mk)
+    for p in a.players: p.inv = 99
+    hold_loot(a, mo, a.players[0])
+    a.update(0.6, mo)
+    for sw in ("left", "left", "right", "right", "right", "right", "right"):
+        mo[0].reset(); mo[0].swing = sw; a.update(1 / 60, mo)
+    assert a.cm["sel"] == len(a.cm["offers"])
+
+
+def test_cpu_takes_best_uncursed_item(mk):
+    a, mo = kill_boss_and_chest(mk)
+    p = a.players[1]; p.cpu = True
+    a.start_chest(p)
+    got = [it for it in p.gear.values() if it]
+    assert a.state == "play" and len(got) == 1 and not got[0].get("cursed") and 1 in a.chest["used"]
+
+
 def test_gear_carries_into_next_level(mk):
     from game.arena import Arena
-    w = dict(name="Lightbringer", cursed=False, atk=1.25)
-    a = Arena(3, [Player(0, "Knight", 80), Player(1, "Mage", 110)], gear=[w, None])
+    w = dict(name="Lightbringer", slot="weapon", tier=2, cursed=False, atk=1.25)
+    a = Arena(3, [Player(0, "Knight", 80), Player(1, "Mage", 110)], gear=[{"weapon": w}, {}])
     assert a.players[0].weapon == w and a.players[1].weapon is None and a.players[0].atk == round((8 + 6 * 2) * 1.25)

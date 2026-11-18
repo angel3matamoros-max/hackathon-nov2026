@@ -5,6 +5,7 @@ from . import gfx
 from .config import *
 from .gfx import text, bar, lerp, font, mid
 from .sprites import HERO, MIMIC
+from .items import describe
 
 
 class Mini:
@@ -158,18 +159,6 @@ class Parry(Mini):
 
 
 MINIS = [DiceShake, LockPick, SlashLoot, Parry]
-ITEMS = ["Sword", "Shield", "Helm", "Boots", "Ring", "Amulet", "Potion"]
-ADJ = [["Rusty", "Dull", "Worn"], ["Sturdy", "Polished", "Keen"], ["Gleaming", "Runed", "Cursed"], ["Mythic", "Dragonforged", "Celestial"]]
-SUFFIX = {"dice": "of Fortune", "lock": "of the Steady Hand", "slash": "of Swift Cuts", "parry": "of the Perfect Parry"}
-
-
-def roll_loot(kind, score):
-    r = score * 0.75 + random.random() * 0.35
-    tier = 0 if r < 0.35 else 1 if r < 0.6 else 2 if r < 0.85 else 3
-    name = f"{random.choice(ADJ[tier])} {random.choice(ITEMS)}" + (" " + SUFFIX[kind] if tier else "")
-    return {"name": name, "tier": tier}
-
-
 # ---------------------------------------------------------------- holy chest (level 3): class weapons, 75% holy / 25% cursed
 HOLY = {
     "Knight": dict(name="Lightbringer", cursed="Lightbringer, Fallen", curse=("Brittle Soul", "Take +30% damage", dict(dmg_taken=1.3))),
@@ -186,5 +175,8 @@ def roll_holy(cls, rng=random):
     h = HOLY[cls]
     if rng.random() < CURSE_CHANCE:
         cname, ctext, eff = h["curse"]
-        return dict(name=h["cursed"], cursed=True, atk=CURSED_ATK, curse=cname, curse_text=ctext, **eff)
-    return dict(name=h["name"], cursed=False, atk=HOLY_ATK)
+        it = dict(name=h["cursed"], slot="weapon", tier=3, cursed=True, atk=CURSED_ATK, curse=cname, curse_text=ctext, **eff)
+    else:
+        it = dict(name=h["name"], slot="weapon", tier=2, cursed=False, atk=HOLY_ATK)
+    it["desc"] = describe(it)
+    return it

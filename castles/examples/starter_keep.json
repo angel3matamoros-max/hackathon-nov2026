@@ -1,0 +1,103 @@
+{
+ "name": "Starter Keep",
+ "levels": [
+  {
+   "theme": 0,
+   "layout": "A",
+   "style": "wave",
+   "boss": "gravekeeper",
+   "waves": [
+    [
+     [
+      "zombie",
+      3
+     ]
+    ],
+    [
+     [
+      "zombie",
+      2
+     ],
+     [
+      "skeleton",
+      1
+     ]
+    ],
+    [
+     [
+      "skeleton",
+      2
+     ]
+    ]
+   ]
+  },
+  {
+   "theme": 1,
+   "layout": "B",
+   "style": "wave",
+   "boss": "beastlord",
+   "waves": [
+    [
+     [
+      "bunny",
+      2
+     ],
+     [
+      "wolf",
+      1
+     ]
+    ],
+    [
+     [
+      "wolfman",
+      2
+     ],
+     [
+      "catman",
+      1
+     ]
+    ],
+    [
+     [
+      "bunny",
+      1
+     ],
+     [
+      "catman",
+      1
+     ],
+     [
+      "wolf",
+      1
+     ]
+    ]
+   ]
+  },
+  {
+   "theme": 2,
+   "layout": "A",
+   "style": "wave",
+   "boss": null,
+   "waves": [
+    [
+     [
+      "knight",
+      2
+     ]
+    ],
+    [
+     [
+      "knight",
+      2
+     ]
+    ],
+    [
+     [
+      "knight",
+      2
+     ]
+    ]
+   ]
+  }
+ ]
+}

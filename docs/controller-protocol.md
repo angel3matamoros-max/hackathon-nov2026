@@ -1,74 +1,91 @@
-# Custom controller plan: Elegoo UNO + GY-521 (MPU-6050)
+# Hand controller (ELEGOO MEGA 2560 + GY-521): how it works and how to tune it
 
-Status: **design only, not built yet.** The game is keyboard-only today. Everything the game needs from a controller is the
-`Motion` object in [game/inputs.py](../game/inputs.py); the controller work later replaces only that file's backend.
-`make_motions()` in the same file is the one place a new backend is registered. A test
-(`tests/test_cutscenes_input.py::test_game_code_reads_only_motion_fields`) fails if gameplay code starts reading the keyboard directly,
-so the seam stays clean.
+Status: **built and reading from the real board** (the firmware sends 20 lines a second and every line parses). Gesture thresholds are
+first guesses: tune them with `main.py --pad-monitor` (see below). The board has an accelerometer only (no gyro), so gestures use
+accelerometer changes and posture, not rotation rate.
 
-## What the game reads from `Motion` (per player)
+## Hardware (what the firmware expects)
 
-| Field | Kind | Used for | Gyro idea |
-|---|---|---|---|
-| `axis` (-1/0/1), `tilt` (-1..1) | held | walking, lock-pick mini-game | roll the controller left/right |
-| `jump_h`, `down_h`, `block_h`, `interact_h` | held | jump height, fast-fall, block, loot | buttons |
-| `jump_p`, `down_p`, `dash_p`, `cast_p`, `cast2_p`, `skip_p` | one-frame pulse | jump, drop, dash, skills, skip | buttons |
-| `slash_p`, `flick` | one-frame pulse | **sword hit**, parry, mash | **swoosh gesture** |
-| `swing` ("left"/"right"/"up"/"down"/None) | one-frame | slash-the-loot mini-game, menus, chest choice | direction of the swoosh |
-| `shake` (0..1) | continuous | dice mini-game | shake energy |
-
-## Hardware (Elegoo UNO R3 kit)
-
-| GY-521 pin | UNO pin |
+| Part | Where |
 |---|---|
-| VCC | 5V (the module has its own regulator) |
-| GND | GND |
-| SDA | A4 |
-| SCL | A5 |
-| AD0 | GND (I2C address 0x68) |
+| GY-521 (MPU-6050), I2C address 0x68 | Mega pins 20 (SDA) and 21 (SCL) |
+| Button 1 | Mega pin 2, INPUT_PULLUP, reads 1 when pressed |
+| Button 2 | Mega pin 3, INPUT_PULLUP, reads 1 when pressed |
+| Stick click | Mega pin 4, INPUT_PULLUP, reads 1 when clicked |
+| Joystick X / Y | analog A0 / A1, resting near 512 |
 
-Kit push buttons: one pin each to D2..D7, other side to GND, use `INPUT_PULLUP`. Suggested mapping: D2 jump, D3 dash, D4 block (held), D5 skill 1, D6 skill 2, D7 loot / skip. The kit's joystick module can drive walking as an alternative to roll.
+## Wire format
 
-## Serial protocol (UNO to PC, USB, 115200 baud, ~100 Hz)
+One newline-terminated CSV line about every 50 ms at 115200 baud over USB:
 
-One ASCII line per sample, newline terminated: `ax,ay,az,gx,gy,gz,btns` where the six IMU values are the raw 16-bit MPU-6050 readings (accel +-2g = 16384 LSB/g, gyro +-500 deg/s = 65.5 LSB/deg/s) and `btns` is a bitmask of the six buttons (bit0 = D2 ... bit5 = D7). Example: `120,-340,16280,15,-22,3,5`.
-
-Reference sketch outline (untested on hardware; written from the MPU-6050 datasheet register map):
-
-```cpp
-#include <Wire.h>
-const int MPU = 0x68;
-void setup() {
-  Serial.begin(115200); Wire.begin();
-  Wire.beginTransmission(MPU); Wire.write(0x6B); Wire.write(0); Wire.endTransmission(true);   // wake up
-  Wire.beginTransmission(MPU); Wire.write(0x1B); Wire.write(0x08); Wire.endTransmission(true); // gyro +-500 deg/s
-  for (int p = 2; p <= 7; p++) pinMode(p, INPUT_PULLUP);
-}
-void loop() {
-  Wire.beginTransmission(MPU); Wire.write(0x3B); Wire.endTransmission(false);
-  Wire.requestFrom(MPU, 14, true);
-  int16_t ax = Wire.read() << 8 | Wire.read(), ay = Wire.read() << 8 | Wire.read(), az = Wire.read() << 8 | Wire.read();
-  Wire.read(); Wire.read();                                                                    // temperature, ignored
-  int16_t gx = Wire.read() << 8 | Wire.read(), gy = Wire.read() << 8 | Wire.read(), gz = Wire.read() << 8 | Wire.read();
-  uint8_t b = 0; for (int p = 2; p <= 7; p++) b |= (!digitalRead(p)) << (p - 2);
-  Serial.print(ax); Serial.print(','); Serial.print(ay); Serial.print(','); Serial.print(az); Serial.print(',');
-  Serial.print(gx); Serial.print(','); Serial.print(gy); Serial.print(','); Serial.print(gz); Serial.print(','); Serial.println(b);
-  delay(10);
-}
+```
+accelX,accelY,accelZ,b1,b2,jx,jy,jsw
 ```
 
-## PC side (to build later)
+Raw 16-bit accelerometer values, button bits 0/1, joystick 0..1023. [game/padbridge.py](../game/padbridge.py) `parse_line` rejects anything else (partial reads, wrong field count, out-of-range values); the reader counts them and carries on.
 
-1. `pyserial` reader thread pushes parsed samples into a lock-protected deque (never block the game loop).
-2. `GyroMotion(Motion)` overrides `update()`: copies the newest sample into the `Motion` fields every frame and clears the pulse fields like `Motion.reset()` does.
-3. Complementary filter (alpha ~0.98) fuses accel + gyro into roll; `axis = sign(roll)` past a dead zone of ~12 deg, `tilt = roll / 45` clamped.
-4. **Swoosh detector**, written as a pure function `classify(window) -> gesture | None` so it can be unit tested from recorded CSV files:
-   - angular speed `w = |gyro|` over the last ~120 ms; a swoosh is `w > ~250 deg/s` followed by a fall below ~80 deg/s, with a 300 ms refractory period;
-   - direction from the dominant gyro axis and its sign: upward swoosh gives `swing="up"`, sideways gives left/right, downward chop gives `down`;
-   - every detected swoosh sets `slash_p = flick = True` plus its `swing`; shake energy (rolling RMS of accel minus 1 g) feeds `shake`.
-5. 1 s "hold still" calibration at start to measure the gyro bias.
-6. The keyboard stays active as a fallback; P2 stays on the keyboard until a second controller exists. Register the backend in `make_motions("gy521")`.
+## What it does in the game
 
-## Test plan for the later stage
+| Control | Game action (player 1) |
+|---|---|
+| Joystick left / right | walk |
+| Joystick up | jump (press again for a double jump; hold for a higher jump) |
+| Joystick down | drop through a platform |
+| Stick click | dash (boost) |
+| Button 1 | skill 1 |
+| Button 2 | skill 2 |
+| Swing (a quick jerk of the pad) | attack, in the direction of the swing |
+| Hold the pad up (tilted toward vertical) | shield / block, while held |
+| Shove (a sharp push along the board's Z axis) | interact (opening chests, looting), held for about 0.6 s |
 
-Record raw CSV of each gesture (10 reps each of up, down, left, right swoosh, idle, walking, shaking); assert `classify` finds >= 9/10 of the intended gestures and < 1 false trigger per minute of idle/walking data; replay a CSV through `GyroMotion` with a fake serial port in pytest.
+In menus the stick moves the cursor, left/right change values, and button 1 confirms. Esc on the keyboard still goes back.
+
+The keyboard keeps working alongside the pad, and player 2 is still on the keyboard (or the CPU in solo mode).
+
+## How it is built (why it looks like this)
+
+- A **reader thread** reads the port and turns each sample into held controls and one-frame pulses. Nothing is sent to the operating
+  system as fake key presses, so it needs no macOS accessibility permission and cannot type into another window.
+- The logic is a **pure state machine** (`PadState`), tested with recorded sample streams (`tests/test_padbridge.py`).
+- `PadMotion` maps those pulses onto the same `Motion` fields the keyboard fills, so gameplay code is unchanged.
+- Buttons and the stick click need **2 consecutive samples** to count (debounce). That is about 50 ms of added latency. Joystick up/down
+  use hysteresis instead, so jumping is immediate.
+- A **swing** is followed by a return jerk. Opposite-direction swings are ignored for 0.6 s after a swing, and swings have a 0.3 s cooldown.
+
+## Start-up
+
+1. The game finds the board: `/dev/cu.usbmodem1301`, or the first `/dev/cu.usbmodem*` or `/dev/ttyACM*`. Set `ROGUE_PAD_PORT` to pick another, or `ROGUE_PAD=0` to turn it off.
+2. It prints `Hand controller on ... Calibrating... keep it level for about one second.`, then `Ready!`.
+3. While you play it prints each gesture and press: `JUMP`, `BOOST`, `ABILITY 1`, `SWING! (left)`, `SHIELD up (hold)`, `SHOVE! (interact)`.
+4. If the board is unplugged it prints one message and keeps retrying. The keyboard keeps working.
+
+## Tuning (all in the CONFIGURATION block at the top of game/padbridge.py)
+
+Run `.venv/bin/python main.py --pad-monitor` first. It prints the raw values and the held controls every quarter second.
+
+| Setting | What it does | Tune it when... |
+|---|---|---|
+| `JOY_UP`, `JOY_DOWN` (800 / 200) | when a joystick push counts as jump / drop | jumping on its own, or not jumping |
+| `JOY_LEFT`, `JOY_RIGHT` (250 / 750) | when a push counts as walking | walking drifts when the stick rests |
+| `JOY_HYST` (60) | how far back a push must return before it releases | the same jump registers twice |
+| `SWING_DELTA` (8000) | how much the accelerometer must change between two samples to count as a swing | swings do nothing, or walking shakes trigger attacks |
+| `SHOVE_DELTA` (8000) | the same for the Z axis (shove) | shoves do nothing, or swings count as shoves |
+| `SHIELD_TILT` (12000) | how far the pose must tilt from the start-up baseline | the shield comes on too easily or never |
+| `SHIELD_SIGN` (-1) | which way "held up" moves accelY | holding up releases the shield; set it to +1 |
+| `SHIELD_HOLD` (0.15 s) | how long the pose must last | the shield flickers |
+| `DEBOUNCE_SAMPLES` (2) | samples a button must hold before it counts | presses feel late (1 = no debounce) or double up |
+| `CALIB_SAMPLES` (20) | samples averaged for the level baseline | the baseline is off when you start |
+
+The button and stick-click pins, and the joystick pins, are fixed by the firmware. The board is wired per the table above.
+
+## Remapping
+
+`MAP` in game/padbridge.py says which control drives which action. Controls: `joy_up`, `joy_down`, `joy_click`, `btn1`, `btn2`, `shield`,
+`attack` (swing), `shove`. For example, to make button 1 the dash: `boost="btn1"`.
+
+## Known limits
+
+- No gyro, so there is no rotation-based gesture. Swing and shove detection work on acceleration changes only.
+- Calibration assumes the pad is level for the first second. Start with it still.
+- This was tested against the real board's data stream, but the gesture thresholds have not been tuned with a human hand yet.
+- The GY-521 gesture set in the earlier plan (a 100 Hz gyro sketch) is replaced by this firmware. The firmware in use is the source of truth.

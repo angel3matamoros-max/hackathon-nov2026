@@ -7,3 +7,7 @@ rogue_settings.json
 qa/shots/
 .pytest_cache/
 .ruff_cache/
+
+# castle maker: your castles are saved here (examples/ is kept)
+castles/*
+!castles/examples/

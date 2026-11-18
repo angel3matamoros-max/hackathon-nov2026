@@ -6,7 +6,7 @@ from .config import *
 class Motion:
     """One per player. Keyboard now; for the GY-521 make a subclass that fills these fields:
        axis -1/0/1 (walk) | jump_h, down_h, block_h, interact_h (held)
-       jump_p, down_p, dash_p, slash_p, cast_p, cast2_p (one frame)
+       jump_p, down_p, dash_p, slash_p, cast_p, cast2_p, gear_p (one frame)
        tilt -1..1, shake 0..1, swing 'left'/'right'/'up'/'down', flick (used by loot mini-games), skip_p (skip tutorial/cutscene)."""
 
     def __init__(s, i):
@@ -14,8 +14,12 @@ class Motion:
         s.jump_h = s.down_h = s.block_h = s.interact_h = False
         s.reset()
 
+    def menu_keys(s):
+        """Key codes the hand controller produced this frame (menus read them like arrow keys). Keyboard-only: none."""
+        return []
+
     def reset(s):
-        s.jump_p = s.down_p = s.dash_p = s.slash_p = s.cast_p = s.cast2_p = s.flick = s.skip_p = False
+        s.jump_p = s.down_p = s.dash_p = s.slash_p = s.cast_p = s.cast2_p = s.flick = s.skip_p = s.gear_p = False
         s.swing = None
 
     def update(s, events, dt):
@@ -40,14 +44,19 @@ class Motion:
                 s.shake = min(1, s.shake + 0.15)
             if e.key == k["cast"]: s.cast_p = True
             if e.key == k["cast2"]: s.cast2_p = True
+            if e.key == k["gear"]: s.gear_p = True
             if e.key == pygame.K_TAB: s.skip_p = True  # skip tutorial / cutscene (a controller button can set this too)
         s.shake = max(0, s.shake - dt * 0.7)
 
 
-def make_motions(backend="keyboard"):
+def make_motions(backend="auto"):
     """Factory for the two players' input objects. This is the single place a new controller plugs in:
     a future backend (e.g. "gy521": GyroMotion subclasses Motion and fills the same fields from serial data,
     see docs/controller-protocol.md) is added here. Nothing else in the game needs to change."""
     if backend == "keyboard":
         return [Motion(0), Motion(1)]
+    if backend == "auto":  # hand controller for player 1 if one is plugged in, else the keyboard
+        from . import padbridge  # imported here: padbridge builds on Motion
+        reader = padbridge.start()
+        return [padbridge.PadMotion(0, reader), Motion(1)] if reader else [Motion(0), Motion(1)]
     raise ValueError(f"unknown input backend {backend!r} (available: 'keyboard')")

@@ -13,7 +13,8 @@ Developer mode:  python main.py --dev            (menu gets "DEV: LEVEL SELECT";
                  python main.py --gallery        (enemy gallery: Y spawns every enemy / boss in turn)
 Self-test:       python main.py --selftest       (headless smoke test of every screen, level, boss and cutscene)
 
-Controller plan: each player has a Motion object (game/inputs.py) - subclass it for the GY-521 (see docs/controller-protocol.md).
+Hand controller: plugged in, it drives player 1 (game/padbridge.py). Tune it with --pad-monitor (see docs/controller-protocol.md).
+  python main.py --pad-monitor    print the controller's raw values and gestures, then exit
 """
 import argparse
 import os
@@ -26,6 +27,7 @@ def parse(argv=None):
     ap.add_argument("--level", type=int, metavar="N", help="start directly in level N (1-6), implies --dev")
     ap.add_argument("--gallery", action="store_true", help="start in the enemy gallery, implies --dev")
     ap.add_argument("--selftest", action="store_true", help="run a headless smoke test and exit")
+    ap.add_argument("--pad-monitor", action="store_true", help="print the hand controller's raw values and gestures (for tuning) and exit")
     return ap.parse_args(argv)
 
 
@@ -36,6 +38,10 @@ if __name__ == "__main__":
         os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
     from game import config
     config.DEV = args.dev or os.environ.get("ROGUE_DEV") == "1" or args.level is not None or args.gallery
+    if args.pad_monitor:
+        from game.padbridge import monitor
+        monitor()
+        sys.exit(0)
     if args.selftest:
         from game.selftest import run
         sys.exit(run())

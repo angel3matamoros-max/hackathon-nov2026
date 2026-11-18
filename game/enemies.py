@@ -2,7 +2,7 @@
    hop=(vy, t_lo, t_hi)   hops instead of walking (moves only while airborne)
    lunge=(range, speed, dur)  telegraphed dash attack            fly=True   hovers at head height
    ranged=dict(keep, shot, dmg, cd, speed)  keeps distance and shoots   summon=(kind, cap, cooldown)
-   shield=True  frontal hits reduced unless it is attacking/stunned     dodge=cooldown  sidesteps the first hit
+   drop=chance  corpse is lootable      shield=True  frontal hits reduced unless it is attacking/stunned     dodge=cooldown  sidesteps the first hit
 """
 import math, random
 from .config import *
@@ -28,7 +28,11 @@ ESTATS = {
     "alien": dict(hp=70, dmg=0, spd=34, rng=0, wind=.6, w=14, h=30, fly=True, ranged=dict(keep=130, shot="laser", dmg=13, cd=2.1, speed=300)),
     "drone": dict(hp=16, dmg=7, spd=80, rng=16, wind=.35, w=18, h=12, fly=True),
 }
-FLYERS = {k for k, v in ESTATS.items() if v.get("fly")}
+
+# chance that a fallen foe leaves a lootable corpse (bosses always do). Weak fodder rarely drops, elites often.
+DROP = dict(skeleton=.30, slime=.25, bat=.15, brute=.60, dummy=0, zombie=.25, wolf=.20, bunny=.20, wolfman=.45, catman=.35, knight=.50,
+            lich=.50, gunman=.35, alien=.50, drone=.10)
+for _k, _v in DROP.items(): ESTATS[_k]["drop"] = _v
 
 
 class Enemy:
@@ -42,6 +46,17 @@ class Enemy:
         s.hp = s.maxhp = hp or s.d["hp"]
         s.face, s.state, s.st, s.flash, s.stun, s.frozen, s.kb, s.anim, s.hop = -1, "walk", 0.0, 0.0, 0.0, 0.0, 0.0, random.random() * 3, 0.0
         s.act, s.cd, s.cd2, s.dodge_cd, s.hit_done = "melee", random.uniform(0.6, 1.6), random.uniform(2.0, 4.0), 0.0, False
+
+    def dmg_mult(s):
+        """Damage multiplier on hits this enemy takes (bosses with armour / vests override)."""
+        return 1.0
+
+    def invulnerable(s):
+        return False
+
+    def status(s):
+        """(text, colour) shown under a boss's health bar, or None."""
+        return None
 
     # ------------------------------------------------------------ AI
     def update(s, dt, a):

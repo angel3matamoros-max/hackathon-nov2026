@@ -23,7 +23,7 @@ def test_flyers_hover_above_ground(mk):
     for k in ("bat", "drone", "alien"):
         a.spawn(k, x=300, dscale=1.0)
     run_bot(a, 3)
-    assert all(e.y < FLOOR for e in a.enemies)
+    assert all(e.y < FLOOR for e in a.enemies if e.kind in ("bat", "drone", "alien"))
 
 
 def test_difficulty_scales_enemy_damage_dealt(mk):

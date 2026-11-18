@@ -18,7 +18,7 @@ def run():
     config.SET.update(config.load_settings())
     from .app import Game, init_display
     from .qabot import FakeMotion, Bot
-    from .levels import NUM_LEVELS, get_bg
+    from .levels import NUM_LEVELS, LEVELS, get_bg, waves_of
     from .bosses import BOSSES
     from .enemies import ESTATS
     from .sprites import ENEMY, CORPSE
@@ -31,15 +31,14 @@ def run():
 
     print("selftest: assets")
     check("every enemy kind has sprite + corpse", all((k, 0) in ENEMY and (k, 0) in CORPSE for k in ESTATS))
-    check("every level has waves + a known boss", all(l["waves"] and l["boss"] in BOSSES for l in __import__("game.levels", fromlist=["LEVELS"]).LEVELS))
+    check("every level has waves + a known boss", all(len(waves_of(l)) >= 3 and l["boss"] in BOSSES for l in LEVELS))
     for i in range(NUM_LEVELS): get_bg(i)
 
     print("selftest: menus")
     g = Game(dev=True, motions=[FakeMotion(0), FakeMotion(1)])
     config.SET["tutorial_done"] = True
     for _ in range(3): g.step(dt, [])
-    g.step(dt, [key(pygame.K_DOWN)])
-    g.step(dt, [key(pygame.K_DOWN)])
+    g.msel = g.menu_items().index("SETTINGS")
     g.step(dt, [key(pygame.K_RETURN)])  # settings
     check("settings screen opens", g.mode == "settings")
     for _ in range(3): g.step(dt, [])

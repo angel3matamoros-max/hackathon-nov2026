@@ -17,6 +17,7 @@ def test_full_campaign_to_victory_via_real_game_loop():
     g = Game(dev=False, motions=[FakeMotion(0), FakeMotion(1)])
     bot = Bot("loot")
     g.step(DT, [pygame.event.Event(pygame.KEYDOWN, key=pygame.K_RETURN)])
+    g.step(DT, [pygame.event.Event(pygame.KEYDOWN, key=pygame.K_RETURN)])   # players screen: 2 players
     g.step(DT, [])
     for m in g.motions: m.slash_p = True
     g.step(DT, [])
@@ -33,7 +34,7 @@ def test_full_campaign_to_victory_via_real_game_loop():
     assert g.mode == "victory", f"stuck in {g.mode} at level {g.area + 1} after {step} steps"
     assert seen_levels == set(range(NUM_LEVELS)) and {"cutscene", "game", "victory"} <= seen_modes
     assert len(g.inv[0]) + len(g.inv[1]) > 0               # looted along the way
-    assert any(g.gear)                                     # level 3 chest: bot always takes what it is offered
+    assert any(it for gd in g.gear for it in gd.values())  # level 3 chest / loot: the bot ends up with gear
 
 
 def test_content_is_winnable_with_multipliers_off():

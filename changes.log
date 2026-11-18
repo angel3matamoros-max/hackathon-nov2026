@@ -101,3 +101,103 @@
   files: n/a
   why:   the owner asked for it ("lets commit and push").
   notes: committed with the 163 tests, lint and --selftest passing. The independent QA review (qa/REPORT.md) had not finished when this was committed, so it is not in this commit; any defects it finds will be fixed in follow-up commits.
+
+[2026-11-17] git: CORRECTION to the commit entry above: the first push failed, then succeeded
+  files: n/a
+  why:   the entry above said the work was pushed. At that moment the push had failed (no GitHub credentials on this machine). After the owner provided a token it pushed main -> origin/main (commit f7fe0b1).
+  notes: the token was used once through a temporary GIT_ASKPASS script with credential helpers disabled. It was not written to .git/config, the Keychain, the remote URL or any file. It is visible in this chat transcript, so the owner should revoke it on GitHub.
+
+[2026-11-17] fix: defects from the independent QA review (details and status of every finding in qa/REPORT.md)
+  files: game/arena.py, game/player.py, game/sprites.py, game/config.py, game/enemies.py, game/qabot.py, tests/test_enemies.py
+  why:   D1 rounding of damage taken, D2 clipped chest text, D3 integer HP on revive, D4 dead enemies no longer act (a boss's summon could fire after the boss died),
+         D5 frame-rate independent jump cut, D6 wide corpses stay lying down, D7 full HUD skill names, N4 removed unused FLYERS, N6 "false" no longer loads as True,
+         M1 balance bot used frame-number modulo timers and almost never acted for player 2 at 30 Hz: now real timers.
+  notes: after M1 the balance picture changed: with the approved 0.75/1.25 curve the careful bot wins L1-L4 100% but L5 8% and L6 25% (earlier numbers of 0% from L3 were a bot bug).
+         Left open on purpose: M2 (difficulty curve, owner decision), D8 (Esc confirmation, design), N2/N3/N5/N7-N10. Not committed.
+
+[2026-11-17] docs: qa/REPORT.md added; README difficulty note and repository status updated
+  files: qa/REPORT.md, README.md
+  why:   store the QA review in the repo (the reviewer's tool could not write files) and correct the balance numbers after the bot fix.
+
+[2026-11-18] docs: controller plan retargeted from the Elegoo UNO to the Elegoo MEGA 2560
+  files: docs/controller-protocol.md, README.md
+  why:   the owner's kit is the MEGA 2560. I2C is on pins 20 (SDA) / 21 (SCL) instead of A4 / A5; buttons stay on D2-D7 (no clash). Wire format, sketch and gesture design are unchanged.
+  notes: still design only; nothing tested on hardware.
+
+[2026-11-18] feat: waves are fought one after another instead of all at once
+  files: game/levels.py, game/arena.py, game/selftest.py, tests/conftest.py, tests/test_levels.py, tests/test_bosses.py
+  why:   owner checklist: "levels go by waves rather than all in". Level `waves` is now a list of waves (waves_of() still accepts the old flat form as one wave). Banner "WAVE n/N", 2.5 s gap, at most 8 foes alive, boss after the last wave.
+  notes: tests rewritten for the new flow (boss only after every wave, next wave waits for the previous to be cleared). L1-L3 become scrolling levels in P3 but keep these waves until then.
+
+[2026-11-18] feat: only some enemies drop loot; cleared waves sometimes leave a supply cache
+  files: game/enemies.py (DROP table), game/arena.py (kill, wave_cleared), tests/test_loot_system.py
+  why:   owner checklist: "not all the bots drop loot, just some, and only sometimes at the end of the wave". Per-type drop chance (fodder 10-30%, elites 45-60%, bosses and the tutorial always); non-drops leave a plain corpse; 35% cache after a non-final wave.
+
+[2026-11-18] feat: gear system (weapon / armor / charm with real effects) replaces name-only loot
+  files: game/items.py (new), game/loot.py, game/player.py, game/arena.py, game/app.py, game/config.py, game/inputs.py, game/qabot.py, tests/test_loot_system.py, tests/test_chest.py, tests/test_flow.py, tests/test_campaign.py
+  why:   owner was "still confused on the looted abilities": items were only names. Now they have a slot, rarity and effects (ATK, HP, damage taken, cooldowns, speed, crit, lifesteal, thorns, perfect-block window), shown in a popup, a HUD slot row and a Gear screen (key I / O, new `gear_p` Motion field and rebindable action).
+  notes: auto-equip by a power score; defeat restores the gear snapshot from the level start; the holy / cursed chest weapon is a weapon-slot item. Game.gear is now a per-player dict {slot: item}; old settings files without the gear key still load. Legendary is boss-only (boss chest comes in P2).
+
+[2026-11-18] feat: 1 player + CPU ally mode and a players screen
+  files: game/ally.py (new), game/app.py, game/arena.py, game/config.py, tests/test_solo.py, tests/test_flow.py, tests/test_campaign.py
+  why:   owner checklist: "when hit start select between single or 2 player; if you play solo an AI/CPU plays". START now opens a 1/2 players screen (remembered in settings as `solo`). The CPU ally follows, fights, blocks, dodges and gathers loot; it auto-resolves loot and chests so it can never block the human.
+  notes: P1's keys pick the ally's class after P1 is ready. Tests: full level cleared by bot + ally without soft-lock.
+
+[2026-11-18] docs: README updated for waves, drops, gear, Gear key, solo mode; qa/render_shots.py gained P1 screenshots
+  files: README.md, qa/render_shots.py
+  why:   AGENTS.md rule 2.
+  notes: balance re-run after P1 (careful bot, no gear use): L1 100, L2 100, L3 78, L4 100, L5 22, L6 11 (%). The difficulty-curve decision (M2) is still open.
+
+[2026-11-18] feat: bigger bosses (2.5x sprites with cape / mane / halo / saucer), entrance with name card, wider boss bar with a status line
+  files: game/sprites_extra.py, game/bosses.py, game/enemies.py, game/arena.py, tests/test_boss_mechanics.py
+  why:   owner checklist: "better looking bosses like bigger bosses". Boss hitboxes grew to about 36 x 85; reach and stand distances were raised to match. Bosses slide in from the right (immune for 2.2 s). The boss bar shows phase marks and a "what to do" line.
+  notes: found and fixed while testing: a boss spawned off-screen fell through the floor during the entrance (no floor to land on there); it now stays at floor height until it is inside.
+
+[2026-11-18] feat: a signature mechanic per boss, built on a new breakable-props system
+  files: game/props.py (new), game/bosses.py, game/arena.py, game/player.py, game/qabot.py, game/ally.py, tests/test_boss_mechanics.py
+  why:   owner checklist: "cooler mechanics". Gravekeeper: gravestones that birth zombies + rooting grave hands. Beastlord: chain-charge that dazes him on a wall hit + moon rage. Paladin: 3 aegis orbs hold a 90% damage shield. Archlich: immune until his crystals are shattered (each stagger + blink; they reform each phase). Don: vest (60% damage) except during the reload window; crates are bullet cover and dynamite wrecks them. Tycoon: tractor beam that lifts heroes.
+  notes: slashes, skills and projectiles all hit props. New Player.rooted status (dash breaks free). Bots (Bot / Ally) now attack breakable props, otherwise they could never beat the Archlich.
+
+[2026-11-18] feat: every boss drops a Boss Chest: pick 1 of 3 epic-or-better items (weapon / armor / charm)
+  files: game/arena.py, game/items.py, tests/test_chest.py, tests/test_bosses.py, tests/test_render.py
+  why:   owner checklist: "bosses drop much better loot". Replaces the boss corpse and the level-3-only holy chest. Level 3's weapon card is the class holy weapon (75/25 blessed / cursed). Legendary items are boss-only. The CPU ally takes the best non-cursed item.
+  notes: the chest modal is now N cards plus LEAVE (left / right, slash).
+
+[2026-11-18] docs: README and qa/CHECKLIST.md updated for bosses, props, boss chest; qa/render_shots.py gained P2 screenshots
+  files: README.md, qa/CHECKLIST.md, qa/render_shots.py
+  why:   AGENTS.md rule 2.
+  notes: balance after P2 (careful bot, bot ignores gear): multipliers ON L1-L6 win 100/100/89/67/44/22 %; content only (OFF) 100 % on every level. M2 (difficulty curve) is still an owner decision; the new gear raises player power, which these bot runs do not include.
+
+[2026-11-18] fix: the eight defects from the independent QA review of the boss and loot work
+  files: game/arena.py, game/props.py, game/bosses.py, game/player.py, game/gfx.py, game/ally.py, tests/test_boss_mechanics.py, tests/test_maker.py
+  why:   QA review (verdict ship with notes). D1 a dead boss's tractor beam stayed on screen (beam drawn only while the boss is alive; beam reset on defeat). D2 the tractor beam could lift a hero off the top of the screen (a ceiling at FLOOR-150). D3 the tutorial pointed at a Gear key that did nothing (the gear screen now works in the tutorial). D5 lifesteal rounded every hit up to 1 HP (fractions now carry over). D6 gravestone zombies were uncapped (same cap of 4 as the boss's summons). D7 the wave clock ran while the Gear screen was open, so a wave could spawn all at once (the clock now only runs in battle). D8 a grab rooted a hero even when it was dodged or blocked, and a downed hero kept the root (root only on a landed hit; cleared when downed). D9 the wave number overprinted the level title (it is now part of the title). D10 chest card text ran past the card (text is measured with the UI font). D12 a crystal or orb could be broken while its boss was still entering (immune until the entrance ends). D13 bosses spawned from dev Y had no setup (every boss spawn now runs setup). D14 the CPU chest pick took a worse item for a slot (it now needs a real upgrade). D4 (the ally looting the human's corpses) is handled by the ally change below.
+  notes: test_boss_mechanics grab test now gives the hero a hittable state (the grab is correctly a no-op on an invulnerable hero). Not fixed (nits, listed in README Known issues): class-select title overlap, hard-to-read boss text, RESISTED overlap, thorns vs bullets.
+
+[2026-11-18] feat: the CPU ally is an assistant, not a second player
+  files: game/ally.py, game/player.py, game/arena.py, tests/test_maker.py, README.md
+  why:   the owner sat and watched the CPU do everything. The ally now: never loots corpses (they are the human's); takes a boss-chest item only after the human has chosen; stays within 80 px of the human and returns when more than 150 px away; fights only foes within 130 px of the human; reacts to a boss wind-up only after 0.35 s; casts skill 1 every 9 s and skill 2 every 14 s. Its hits are 40% weaker and its cooldowns 50% longer (Player.recompute, cpu flag). The CPU's handicap now applies even with no gear (Arena recomputes every hero).
+  notes: the solo balance is not re-measured. A human can now clear a level with the ally doing much less; playtest levels 4-6.
+
+[2026-11-18] feat: Castle Maker (a simple wave composer that saves castles and plays them)
+  files: game/maker.py (new), game/castle.py, game/app.py, game/arena.py, game/levels.py, game/selftest.py, castles/examples/starter_keep.json (new), .gitignore, tests/test_maker.py, tests/test_castle.py, tests/test_scroll.py, qa/render_shots.py, README.md
+  why:   owner asked for the castle maker "as simple as possible but something that works". CASTLE MAKER on the main menu lists saved castles (Enter plays, E edits, + NEW CASTLE). The editor is a row list (W/S, A/D, Enter): name, level, theme, platforms, boss, waves (kind and count), add or delete waves and levels, TEST this level, SAVE, PLAY, BACK. Castles are JSON in castles/ (git-ignored except the starter). Custom levels run through the normal arena (their theme sets the look, their platform layout sets the ledges, a boss-less level opens the portal when its waves end). A castle plays straight through with no cutscenes.
+  notes: not built: free placement of platforms, enemies or chests on a canvas; delete for saved castles (only by deleting the file); the cutscenes between castle levels (IntroCard / AscendCutscene are main-campaign only); the Mario-style scrolling levels (game/scroll.py has the helpers; levels 1-3 still play as one-screen arenas). Tests: 20 maker tests including a whole castle built, saved and cleared to victory.
+
+[2026-11-18] feat: ELEGOO MEGA 2560 hand controller drives player 1 (serial bridge, reader thread, gesture logic)
+  files: game/padbridge.py (new), game/inputs.py, game/app.py, main.py, tests/test_padbridge.py (new), docs/controller-protocol.md (rewritten), README.md, pyproject.toml, uv.lock
+  why:   owner's custom pad (MEGA 2560 + GY-521 + 2 buttons + joystick + stick click) sends 8 CSV fields at about 20 Hz over /dev/cu.usbmodem1301. Built as a Motion subclass (PadMotion) instead of injecting OS key presses with pynput: no macOS accessibility permission, no typing into other windows, and gameplay code is unchanged. The keyboard still works alongside it, and the pad also drives the menus (stick moves, button 1 confirms).
+  notes: pyserial 3.5 added (uv add pyserial). Verified against the real board for six seconds: every line parses (0 bad), calibration completes, the resting baseline is set. NOT verified with a human hand: gesture thresholds (SWING_DELTA, SHOVE_DELTA, SHIELD_TILT) are first guesses; tune with main.py --pad-monitor. The board has no gyro, so gestures are accelerometer-based. Esc still goes back on the keyboard only (the pad has no back button).
+
+[2026-11-18] feat: Castle Maker screens: level strip, live preview, mouse, scrolling rows
+  files: game/maker.py (rewritten draw and hit-test code, Editor refactored into methods), game/app.py (mode_maker, mode_castles, mouse handling), tests/test_maker.py, qa/render_shots.py
+  why:   owner asked for the maker to be more interactive, better looking, with a preview. Now: a row panel that scrolls, a level strip (click a tile to pick a level, the + tile adds one), a preview that draws the real theme background with the platform layout and cycles through each wave's enemies and the boss, a difficulty line, and mouse support (click a row to select, click it again to act, click the < > arrows to change a value). The castle list also previews its first level.
+  notes: screenshots reviewed (qa/shots/maker_editor*.png, maker_castles.png). Mouse click coordinates are canvas coordinates (windowed scaling is handled the same way as the rest of the game).
+
+[2026-11-18] docs: controller doc rewritten for the real board; README and main.py help updated
+  files: docs/controller-protocol.md, README.md, main.py
+  why:   the old doc described a 100 Hz gyro design that is not what the firmware sends.
+
+[2026-11-18] git: committed all outstanding work and pushed main to origin
+  files: n/a
+  why:   owner asked to save the work and update it on GitHub.
+  notes: 292 tests and ruff passed immediately before the commit. Includes the Castle Maker, pad bridge, scroll/ally/items/props modules, new tests and qa/REPORT.md.

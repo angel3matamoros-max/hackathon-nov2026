@@ -11,6 +11,7 @@ from game.qabot import run_bot
 def boss_arena(mk, level, **kw):
     a, mo = mk(level, **kw)
     a.spawn_boss()
+    a.boss.intro, a.boss.x = 0.0, a.boss.home          # skip the entrance
     return a, mo, a.boss
 
 
@@ -23,13 +24,27 @@ def test_boss_per_level_matches_data(mk):
 
 def test_boss_spawns_only_after_all_waves_cleared(mk):
     a, mo = mk(0, waves=True)
-    assert not a.boss_spawned
-    for _ in range(60 * 3): a.update(1 / 60, mo)
-    assert not a.boss_spawned                       # waves still running
-    a.queue = []
-    for e in list(a.enemies): e.hp = 0
-    a.update(1 / 60, mo); a.update(1 / 60, mo)
+    n = len(a.waves)
+    assert n >= 3 and not a.boss_spawned
+    seen = []
+    for _ in range(60 * 90):  # clear each wave the moment it is fully spawned
+        a.update(1 / 60, mo)
+        if a.boss_spawned: break
+        if a.wave_live and not a.queue and a.enemies:
+            seen.append(a.wave)
+            assert not a.boss_spawned
+            for e in list(a.enemies): e.hp = 0
+    assert seen == list(range(n))                 # every wave was fought, in order
     assert a.boss_spawned and a.boss.hp > 0 and not a.portal
+
+
+def test_next_wave_waits_for_the_previous_one_to_be_cleared(mk):
+    a, mo = mk(0, waves=True)
+    a.god = True                                   # idle heroes must survive the whole wait
+    for _ in range(60 * 4): a.update(1 / 60, mo)
+    assert a.wave == 0 and a.wave_live
+    for _ in range(60 * 20): a.update(1 / 60, mo)  # nobody kills anything, so wave 1 must never start
+    assert a.wave == 0 and not a.boss_spawned
 
 
 @pytest.mark.parametrize("kind", BOSS_KINDS)
@@ -74,15 +89,15 @@ def test_boss_defeat_opens_portal_clears_threats_and_kills_summons(mk):
     assert a.portal and not a.eprojs and not a.hazards and not a.players[1].down
     a.update(1 / 60, mo)
     assert not [e for e in a.enemies if e.kind != "dummy"]
-    assert any(c["boss"] for c in a.corpses)
+    assert any(c["boss"] for c in a.corpses)  # the boss corpse is plain: the boss chest is the reward
 
 
-def test_only_level3_boss_drops_a_chest(mk):
+def test_every_boss_drops_a_chest_and_only_level3_offers_the_holy_weapon(mk):
     for lvl in range(6):
         a, mo, b = boss_arena(mk, lvl)
         b.hp = 0
         a.update(1 / 60, mo)
-        assert bool(a.chest) == (lvl == 2)
+        assert a.chest and a.chest["holy"] == (lvl == 2)
 
 
 def test_portal_waits_for_boss(mk):

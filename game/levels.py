@@ -1,6 +1,6 @@
 """The six castle levels (data-driven) and their procedural backgrounds.
 
-Level fields: name, tag (intro tagline), sky/floor/top/plat colours, plats [(x, y, w)], waves [(kind, count)], boss,
+Level fields: name, tag (intro tagline), sky/floor/top/plat colours, plats [(x, y, w)], waves [[(kind, count), ...], ...] (one list per wave), boss,
 tint (slime colour index), amb=(count, colour, shape, motion), torches/runes (decor), grass (floor tufts), hint (show controls).
 """
 import math, random
@@ -12,31 +12,41 @@ from .gfx import lerp, lit, dim, box, glow
 LEVELS = [
     dict(name="Castle Basement", tag="Damp stone, rusty chains. Something shuffles in the dark...",
          sky=((18, 14, 30), (44, 34, 64)), floor=(60, 50, 76), top=(96, 82, 116), plat=(84, 70, 104),
-         plats=[(70, 176, 96), (310, 170, 96), (190, 128, 100)], waves=[("zombie", 5), ("skeleton", 3)], boss="gravekeeper",
+         plats=[(70, 176, 96), (310, 170, 96), (190, 128, 100)], waves=[[("zombie", 3)], [("zombie", 2), ("skeleton", 1)], [("skeleton", 2)]], boss="gravekeeper",
          tint=0, amb=(18, (150, 140, 180), "px", "dust"), torches=True, hint=True, bg="basement"),
     dict(name="Overgrown Jungle", tag="Vines have swallowed the east wing. The beast folk hunt here.",
          sky=((8, 30, 22), (30, 92, 60)), floor=(46, 84, 40), top=(86, 160, 64), plat=(96, 72, 48),
-         plats=[(50, 172, 90), (330, 172, 90), (190, 134, 100)], waves=[("bunny", 3), ("wolfman", 2), ("catman", 2), ("wolf", 2)],
+         plats=[(50, 172, 90), (330, 172, 90), (190, 134, 100)], waves=[[("bunny", 2), ("wolf", 1)], [("wolfman", 2), ("catman", 1)], [("bunny", 1), ("catman", 1), ("wolf", 1)]],
          boss="beastlord", tint=1, amb=(22, (230, 240, 120), "glow", "firefly"), grass=True, bg="jungle"),
     dict(name="Holy Cathedral", tag="The knights who guard the light will not let you pass.",
          sky=((38, 32, 60), (140, 120, 160)), floor=(150, 140, 160), top=(232, 222, 200), plat=(190, 180, 200),
-         plats=[(60, 170, 100), (320, 170, 100), (190, 130, 100)], waves=[("knight", 6)], boss="paladin",
+         plats=[(60, 170, 100), (320, 170, 100), (190, 130, 100)], waves=[[("knight", 2)], [("knight", 2)], [("knight", 2)]], boss="paladin",
          tint=2, amb=(26, (255, 230, 150), "px", "motes"), torches=True, chest=True, bg="cathedral"),
     dict(name="Necropolis", tag="The dead rise at the Archlich's command.",
          sky=((10, 18, 18), (34, 64, 56)), floor=(44, 60, 52), top=(90, 130, 100), plat=(60, 84, 70),
-         plats=[(50, 170, 90), (330, 170, 90), (190, 130, 100), (120, 96, 60)], waves=[("lich", 2), ("skeleton", 3), ("zombie", 3)],
+         plats=[(50, 170, 90), (330, 170, 90), (190, 130, 100), (120, 96, 60)], waves=[[("skeleton", 2), ("zombie", 1)], [("lich", 1), ("zombie", 2)], [("lich", 1), ("skeleton", 1)]],
          boss="archlich", tint=3, amb=(30, (120, 240, 150), "px", "wisp"), runes=True, bg="necropolis"),
     dict(name="Mafia Penthouse", tag="Someone is running a very illegal operation in the castle's top floor.",
          sky=((20, 10, 32), (60, 24, 70)), floor=(92, 28, 48), top=(170, 60, 80), plat=(60, 50, 70),
-         plats=[(40, 172, 90), (350, 172, 90), (150, 138, 80), (250, 138, 80)], waves=[("gunman", 4), ("wolf", 2), ("brute", 1)],
+         plats=[(40, 172, 90), (350, 172, 90), (150, 138, 80), (250, 138, 80)], waves=[[("gunman", 2)], [("wolf", 2), ("gunman", 1)], [("gunman", 1), ("brute", 1)]],
          boss="don", tint=4, amb=(22, (160, 160, 170), "px", "dust"), bg="penthouse"),
     dict(name="Observatory Roof", tag="Above the clouds, something has landed.",
          sky=((6, 4, 20), (44, 20, 80)), floor=(46, 36, 76), top=(130, 100, 210), plat=(74, 56, 124),
          plats=[(48, 174, 84), (348, 174, 84), (130, 132, 76), (274, 132, 76), (200, 94, 80)],
-         waves=[("alien", 3), ("drone", 3), ("wolf", 2), ("lich", 1)], boss="tycoon", tint=5,
+         waves=[[("drone", 3)], [("alien", 2), ("wolf", 1)], [("alien", 1), ("wolf", 1), ("lich", 1)]], boss="tycoon", tint=5,
          amb=(44, (255, 255, 255), "px", "astral"), runes=True, bg="observatory"),
 ]
 NUM_LEVELS = len(LEVELS)
+
+
+def waves_of(level):
+    """The level's waves as a list of waves, each a list of (kind, count). Accepts the old flat form [(kind, n), ...] as a single wave."""
+    w = level["waves"]
+    return [list(x) for x in w] if (w and isinstance(w[0], list)) else ([list(w)] if w else [])
+
+
+def wave_total(level):
+    return sum(n for wv in waves_of(level) for _, n in wv)
 
 
 # ---------------------------------------------------------------- ambient particle motion (name -> fn(m, t, dt))
@@ -177,7 +187,7 @@ _BG = dict(basement=_bg_basement, jungle=_bg_jungle, cathedral=_bg_cathedral, ne
 BGS = {}
 
 
-def make_bg(i):
+def make_bg(i, plats=None):
     A, rnd, sf = LEVELS[i], random.Random(i + 10), pygame.Surface((W, H))
     for y in range(H):
         pygame.draw.line(sf, lerp(A["sky"][0], A["sky"][1], y / FLOOR), (0, y), (W, y))
@@ -189,7 +199,7 @@ def make_bg(i):
         pygame.draw.rect(sf, dim(A["floor"]), (x + 11, FLOOR + 4, 1, 30))
         if A.get("grass"):
             pygame.draw.rect(sf, lit(A["top"]), (x + 4, FLOOR - 2, 2, 2)); pygame.draw.rect(sf, A["top"], (x + 15, FLOOR - 1, 3, 1))
-    for px, py, pw in A["plats"]:
+    for px, py, pw in (A["plats"] if plats is None else plats):
         box(sf, A["plat"], px, py, pw, 9); pygame.draw.rect(sf, A["top"], (px, py, pw, 2))
         pygame.draw.rect(sf, dim(A["plat"]), (px + 4, py + 9, pw - 8, 3))
     for wx in (0, W - 4):  # wall trim marks the wall-jumpable arena borders
@@ -197,10 +207,12 @@ def make_bg(i):
     return sf
 
 
-def get_bg(i):
-    if i not in BGS:
-        BGS[i] = make_bg(i)
-    return BGS[i]
+def get_bg(i, plats=None):
+    """Cached background for theme i. Castle levels pass their own platform layout so the drawn ledges match the physics."""
+    key = (i, None if plats is None else tuple(map(tuple, plats)))
+    if key not in BGS:
+        BGS[key] = make_bg(i, plats)
+    return BGS[key]
 
 
 def draw_torches(t, col=(130, 76, 24)):

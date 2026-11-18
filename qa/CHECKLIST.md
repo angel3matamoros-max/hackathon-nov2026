@@ -22,3 +22,10 @@ Run everything with `.venv/bin/python qa/run_qa.py`.
 | 7 | Keyboard now, custom controller later (GY-521) without rewriting gameplay | `test_cutscenes_input.py::test_game_code_reads_only_motion_fields`, `test_fake_motion_has_the_same_interface_as_motion`, `docs/controller-protocol.md` |
 | 8 | The whole campaign can be completed | `tests/test_campaign.py` (full playthrough through the real Game loop), `--selftest` |
 | 9 | Content is winnable; difficulty ramps | `test_campaign.py::test_content_is_winnable_with_multipliers_off`, `qa/balance.py` (see the report's balance section) |
+| 10 | v5-1: not every enemy drops loot, only some, sometimes at wave end | `tests/test_loot_system.py::test_drops_are_partial_and_elites_drop_more`, `test_cache_can_appear_between_waves`, `test_tutorial_and_bosses_always_drop` |
+| 11 | v5-2: choose 1 player (CPU ally) or 2 players | `tests/test_solo.py` (screen flow, persistence, ally follows / fights / never blocks, full level with a bot + ally), `qa/shots/players_screen.png`, `solo_class_select.png` |
+| 12 | v5-3: levels go by waves | `test_bosses.py::test_boss_spawns_only_after_all_waves_cleared`, `test_next_wave_waits_for_the_previous_one_to_be_cleared`, `test_levels.py` (>= 3 waves per level) |
+| 13 | v5-4: bigger, better-looking bosses with cooler mechanics | `tests/test_boss_mechanics.py` (entrance, gravestones + grab, wall-daze charge, aegis orbs, crystals, cover + reload, tractor beam, props), `qa/shots/boss*_mechanic.png`, `boss*_entrance.png`, `sprites.png` |
+| 14 | v5-5: looted abilities are understandable | `tests/test_loot_system.py` (items have slot / tier / effects / description, stacking, auto-equip, perks work in combat, defeat restores gear), `qa/shots/loot_popup.png`, `gear_screen.png`; tutorial text |
+| 15 | v5-6: bosses drop much better loot | `tests/test_chest.py::test_boss_chest_offers_three_epic_or_better_items_one_per_slot`, `test_chest_take_equips_leave_keeps_and_cannot_roll_twice`, `qa/shots/boss_chest_modal.png` |
+| 16 | v5-7: board is the ELEGOO MEGA 2560 | `docs/controller-protocol.md` (pins 20 / 21 for I2C) |

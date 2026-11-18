@@ -38,6 +38,17 @@ def outlined(s):
     return out
 
 
+def fit_lines(s, width, n=6):
+    """Word-wrap `s` so no line is wider than `width` px (measured with the UI font), at most `n` lines."""
+    out, line = [], ""
+    for w in s.split():
+        t = (line + " " + w).strip()
+        if font.size(t)[0] <= width or not line: line = t
+        else: out.append(line); line = w
+    if line: out.append(line)
+    return out[:n]
+
+
 def text(s, x, y, color=WHITE, f=font, center=False, right=False):
     img, sh = f.render(s, False, color), f.render(s, False, INK)
     x -= img.get_width() // 2 if center else (img.get_width() if right else 0)
