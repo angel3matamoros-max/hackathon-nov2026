@@ -4,6 +4,7 @@ import pygame
 from .config import *
 from .gfx import box, outlined, lit, dim
 from .classes import CLASSES
+from .sprites_extra import build_extra
 
 
 def hero_frame(cls, i=None, n=8):
@@ -136,6 +137,7 @@ ENEMY = {("skeleton", 0): [skeleton_frame(i) for i in range(4)], ("brute", 0): [
          ("bat", 0): [bat_frame(i) for i in range(2)], ("dummy", 0): [dummy_frame()]}
 for _a, _c in enumerate(SLIME_COL):
     ENEMY[("slime", _a)] = [slime_frame(i, _c) for i in range(2)]
+ENEMY.update(build_extra())
 CORPSE = {k: pygame.transform.rotate(v[0], 90) for k, v in ENEMY.items()}
 
 MIMIC = pygame.Surface((16, 14), pygame.SRCALPHA)

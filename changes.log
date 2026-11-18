@@ -1,0 +1,103 @@
+# Change log for hackathon-nov2026 (see AGENTS.md for the format and rules). Append only.
+#
+# Entries below start from this session. Earlier history is in git: dfe02bf (baseline single file),
+# 55bb2a5 (M0: split monolith into game/ package, add pytest + golden test).
+
+[2026-11-17] git: added remote "origin"
+  files: .git/config
+  why:   connect the local repo to https://github.com/angel3matamoros-max/hackathon-nov2026.git
+  notes: only the remote was added. Nothing was fetched or pushed.
+
+[2026-11-17] docs: added README.md
+  files: README.md
+  why:   project documentation (overview, controls, heroes, levels, loot, layout, tests, known issues)
+  notes: written by reading the code. The game was not run. The test suite fails at collection
+         because game/app.py and tests/test_baseline.py import AREAS, which game/levels.py no longer defines
+         (it defines LEVELS). Recorded under "Known issues" in the README, not fixed.
+
+[2026-11-17] docs: corrected mini-game descriptions in README.md
+  files: README.md
+  why:   the first draft guessed three mini-game descriptions. Replaced them with the in-game hint text from game/loot.py.
+  notes: also merged two overlapping "Known issues" items about the unimplemented --dev flag into one.
+
+[2026-11-17] docs: added AGENTS.md and changes.log
+  files: AGENTS.md, changes.log
+  why:   owner asked for all changes to be tracked in this structure
+  notes: AGENTS.md defines the append-only logging rule and entry format. This file is the log.
+
+# ---- Entries below were written retroactively at the end of the work session that built the castle campaign
+# ---- (AGENTS.md was added to the repo partway through, so these were not logged one by one).
+
+[2026-11-17] chore: dependencies, lint config and .gitignore
+  files: pyproject.toml, uv.lock, .gitignore
+  why:   the game needs pygame (it was not declared; pip was the only dependency). Added pytest and ruff as a dev group and a ruff config (E9 + F rules).
+  notes: `uv sync` installed pytest and ruff into .venv and removed pip from it. .gitignore ignores .venv, .idea, caches, rogue_settings.json, qa/shots.
+
+[2026-11-17] refactor: split main.py into the game/ package (no behaviour change)
+  files: main.py, game/ (config, gfx, classes, sprites, levels, inputs, loot, player, enemies, arena, app)
+  why:   main.py was 1,533 lines and the work ahead would have doubled it. Needed testable modules and a clean controller seam.
+  notes: done with a script that sliced the original by line range. Verified with a deterministic bot simulation of all 6 old areas that matched
+         the original exactly (kept as tests/test_baseline.py in commit 55bb2a5). Display creation moved out of import time so tests run headless.
+
+[2026-11-17] feat: data-driven levels, six castle levels and compounding difficulty
+  files: game/levels.py, game/config.py, game/arena.py
+  why:   brief: 6 levels (basement, jungle, holy cathedral, necropolis, mafia penthouse, observatory roof) and +25% enemy damage / -25% damage taken per level.
+  notes: difficulty() = (0.75**level, 1.25**level), constants DMG_TAKEN_STEP / DMG_DEAL_STEP in config.py. Damage floor of 1. Level 1 shows control hints.
+         Replaced AREAS (6 old themed areas) with LEVELS; old Sunken Ruin, Ember Caverns and Frost Keep backgrounds were dropped.
+
+[2026-11-17] feat: new enemies (zombie, wolf, bunny/wolf/cat beast men, holy knight, lich, mafia gunman, alien, drone) and enemy projectiles/hazards
+  files: game/enemies.py, game/sprites_extra.py, game/sprites.py, game/arena.py, game/player.py
+  why:   brief item 2. Enemy AI is now driven by ESTATS keys (hop, lunge, fly, ranged, summon, shield, dodge, climb). Perfect block reflects bullets.
+  notes: Player.take now accepts sx=None (unblockable) and src=None. "Elon Musk" is the final boss's display name via config.ALIEN_NAME.
+
+[2026-11-17] feat: six bosses, boss flow and boss HP bar
+  files: game/bosses.py, game/arena.py, game/cutscenes.py
+  why:   brief item 3. Flow is waves -> boss -> portal. Patterns telegraph, unlock by phase (66% / 33%), bosses resist stun and knockback.
+  notes: BOSS_HP is a tunable list. Boss damage numbers were tuned down after the balance report (beastlord 18->13, don 12->9, tycoon 15->12, fewer bullets/rockets).
+
+[2026-11-17] feat: holy chest on level 3 with class weapons and curses; gear persists across levels
+  files: game/loot.py, game/player.py (apply_gear), game/arena.py, game/app.py
+  why:   brief: boss drops a chest, 75% class holy weapon / 25% stronger cursed weapon, player chooses whether to take it.
+  notes: holy +25% ATK; cursed +70% ATK plus one curse (take +30-35% damage, or max HP -20/-25%, or cooldowns +40%). The chest is placed beside the boss corpse.
+
+[2026-11-17] feat: cutscenes (level intro card, castle-climb after each boss, ending)
+  files: game/cutscenes.py, game/app.py
+  why:   brief item 5. All are procedural, skippable with Tab / Esc / slash.
+
+[2026-11-17] feat: skip-tutorial button
+  files: game/arena.py, game/app.py, game/inputs.py
+  why:   brief item 1. Tab or a mouse click on the on-screen button. Marks tutorial_done and saves it. Motion gained skip_p (Tab) so a controller button can use it later.
+
+[2026-11-17] feat: developer mode, command-line flags and headless selftest
+  files: game/devmode.py, game/app.py, game/selftest.py, main.py
+  why:   brief item 4. --dev / ROGUE_DEV=1 / --level N / --gallery / --selftest. Dev keys: 1-6 [ ] N B X G V T Y C H F1. Never saved to settings.
+
+[2026-11-17] feat: make_motions() factory and controller plan
+  files: game/inputs.py, docs/controller-protocol.md
+  why:   later stage: Elegoo UNO + GY-521. Only the seam and a written plan exist; no controller code. The sketch in the doc is untested on hardware.
+
+[2026-11-17] test: pytest suite (~160 tests), bots, selftest, balance report, screenshots, QA agent
+  files: tests/*, game/qabot.py, qa/ (run_qa.py, balance.py, render_shots.py, render_sprites.py, CHECKLIST.md), .claude/agents/qa.md
+  why:   user asked for a QA that checks code quality and outcomes.
+  notes: deleted tests/test_baseline.py and tests/golden_baseline.json on purpose. They compared the new game against the ORIGINAL 6 areas, which no longer exist
+         (AGENTS.md says a baseline may change only for an intended gameplay change: this was one). The refactor was verified against it before deletion (see the refactor entry).
+
+[2026-11-17] fix: bugs from v4 found by the new tests
+  files: game/gfx.py, game/arena.py, game/config.py, game/player.py
+  why:   (1) blit_ent crashed with "invalid color argument" for negative tints, so drawing any looted corpse crashed the game (existed in v4).
+         (2) enemies were drawn facing away from the player (flip condition inverted in v4). (3) a player standing at the exit when an area cleared left the level
+         instantly: added PORTAL_GRACE = 1.5 s. (4) load_settings lost tutorial_done when the file had no "keys". (5) damage could round to 0.
+  notes: each has a regression test.
+
+[2026-11-17] docs: README.md brought up to date
+  files: README.md
+  why:   the earlier README described a mid-change working tree. Now describes the finished behaviour, dev mode, tests, QA, and replaces the stale Known issues.
+
+[2026-11-17] git: one accidental `git stash` + `git stash pop` in the working tree
+  files: n/a
+  why:   I ran it while checking whether a v4 bug predated my changes. The pop restored everything; no net change (verified with git status and the file list). Nothing was committed or pushed in this session after commit 55bb2a5.
+
+[2026-11-17] git: committed the castle-campaign work and pushed it to origin/main
+  files: n/a
+  why:   the owner asked for it ("lets commit and push").
+  notes: committed with the 163 tests, lint and --selftest passing. The independent QA review (qa/REPORT.md) had not finished when this was committed, so it is not in this commit; any defects it finds will be fixed in follow-up commits.

@@ -168,3 +168,23 @@ def roll_loot(kind, score):
     tier = 0 if r < 0.35 else 1 if r < 0.6 else 2 if r < 0.85 else 3
     name = f"{random.choice(ADJ[tier])} {random.choice(ITEMS)}" + (" " + SUFFIX[kind] if tier else "")
     return {"name": name, "tier": tier}
+
+
+# ---------------------------------------------------------------- holy chest (level 3): class weapons, 75% holy / 25% cursed
+HOLY = {
+    "Knight": dict(name="Lightbringer", cursed="Lightbringer, Fallen", curse=("Brittle Soul", "Take +30% damage", dict(dmg_taken=1.3))),
+    "Tank": dict(name="Sanctified Maul", cursed="Maul of Ruin", curse=("Withering", "Max HP -20%", dict(hp=0.8))),
+    "Fighter": dict(name="Radiant Greatsword", cursed="Greatsword of Wrath", curse=("Heavy Soul", "Skill cooldowns +40%", dict(cd_mult=1.4))),
+    "Mage": dict(name="Staff of Dawn", cursed="Staff of Dusk", curse=("Frail Mind", "Max HP -25%", dict(hp=0.75))),
+    "Rogue": dict(name="Sunfang Daggers", cursed="Moonfang Daggers", curse=("Glass Edge", "Take +35% damage", dict(dmg_taken=1.35))),
+}
+HOLY_ATK, CURSED_ATK, CURSE_CHANCE = 1.25, 1.70, 0.25
+
+
+def roll_holy(cls, rng=random):
+    """One chest roll for a player of class `cls`: 75% holy weapon (+25% ATK), 25% stronger cursed one (+70% ATK + a curse)."""
+    h = HOLY[cls]
+    if rng.random() < CURSE_CHANCE:
+        cname, ctext, eff = h["curse"]
+        return dict(name=h["cursed"], cursed=True, atk=CURSED_ATK, curse=cname, curse_text=ctext, **eff)
+    return dict(name=h["name"], cursed=False, atk=HOLY_ATK)

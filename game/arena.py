@@ -3,27 +3,44 @@ import math, random
 import pygame
 from . import gfx
 from .config import *
-from .gfx import (text, title_text, wrap, bar, gem, glow, blit_ent, lerp, use, world, main_cv, VIGNETTE, DIM, font, mid)
+from .gfx import (text, title_text, wrap, bar, gem, glow, blit_ent, lerp, use, world, main_cv, VIGNETTE, DIM, font, mid, box)
 from .classes import CLASSES, bonus_for
 from .sprites import HERO, ENEMY, CORPSE
-from .levels import AREAS, AMB_N, get_bg, draw_torches, draw_runes
-from .loot import MINIS, roll_loot, PW
-from .player import overlap
-from .enemies import Enemy
+from .levels import LEVELS, NUM_LEVELS, get_bg, draw_torches, draw_runes, new_ambient, move_ambient
+from .loot import MINIS, roll_loot, roll_holy, PW
+from .player import overlap, apply_gear
+from .enemies import Enemy, ESTATS
+from .bosses import Boss, BOSSES, BOSS_HP
+
+PORTAL_GRACE = 1.5  # seconds after the portal opens before it can be entered
+SKIP_RECT = pygame.Rect(W - 130, H - 31, 124, 15)
+SKIP_STATE = dict(hot=False)  # set by app: is the mouse over the skip button  # "SKIP TUTORIAL" button (logical canvas coordinates)
+
+
+def is_flyer(kind):
+    return bool(ESTATS[kind].get("fly"))
 
 
 class Arena:
-    def __init__(s, area, players, tut=False):
-        s.area, s.A, s.players, s.tut = area, AREAS[area], players, tut
+    def __init__(s, area, players, tut=False, tier=None, gallery=False, gear=None):
+        s.area, s.A, s.players, s.tut, s.gallery = area, LEVELS[area], players, tut, gallery
+        s.tier = 0 if tut else (area if tier is None else tier)
+        s.taken, s.dealt = difficulty(s.tier)  # enemies take x taken damage / deal x dealt damage
+        s.god, s.debug = False, False
         s.plats = [(0, FLOOR, W)] + s.A["plats"]
-        s.enemies, s.corpses, s.projs, s.parts, s.texts = [], [], [], [], []
-        s.queue = [] if tut else sorted([random.uniform(1.0, 11.0), k] for k, n in s.A["kinds"] for _ in range(n))
+        s.enemies, s.corpses, s.projs, s.eprojs, s.hazards, s.parts, s.texts = [], [], [], [], [], [], []
+        total = sum(n for _, n in s.A["waves"])
+        span = min(20.0, 5.0 + 1.2 * total)
+        s.queue = [] if (tut or gallery) else sorted([random.uniform(1.0, span), k] for k, n in s.A["waves"] for _ in range(n))
         s.t, s.shake, s.state, s.result, s.loot, s.fail_t = 0.0, 0.0, "play", None, None, 0.0
         s.pending = [[] for _ in players]
-        s.portal, s.kills, s.looted, s.dummy_hits = False, 0, 0, 0
-        s.banner = [f"AREA {area + 1}/{len(AREAS)}: {s.A['name'].upper()}", 2.5]
-        s.amb = [dict(x=random.random() * W, y=random.random() * FLOOR, p=random.random() * 6.28) for _ in range(AMB_N[area])]
+        s.portal, s.portal_t, s.kills, s.looted, s.dummy_hits = False, 0.0, 0, 0, 0
+        s.boss, s.boss_spawned, s.chest, s.cm = None, False, None, None
+        s.banner = [f"LEVEL {area + 1}/{NUM_LEVELS}: {s.A['name'].upper()}", 2.5]
+        s.amb = new_ambient(area)
         s.step, s.mark = -1, {}
+        for p, w in zip(players, gear or []):
+            if w: apply_gear(p, w)
         if tut: s.goto(0)
 
     def both(s, a):
@@ -40,22 +57,117 @@ class Arena:
 
     def spawn(s, kind, x=None, **kw):
         if x is None: x = random.choice((14, W - 14))
-        e = Enemy(kind, x, FLOOR - 70 if kind == "bat" else FLOOR, s.area, **kw)
+        cls = Boss if kind in BOSSES else Enemy
+        e = cls(kind, x, FLOOR - 70 if is_flyer(kind) else FLOOR, s.A.get("tint", 0), **kw)
         s.enemies.append(e); s.burst(x, e.y - 10, (200, 150, 255), 8, 60)
+        return e
+
+    def count(s, kind):
+        return sum(1 for e in s.enemies if e.kind == kind and e.hp > 0)
+
+    def revive(s, frac=0.4):
+        for p in s.players:
+            if p.down: p.down, p.hp = False, p.maxhp * frac
+
+    def spawn_boss(s):
+        kind = s.A["boss"]
+        e = s.spawn(kind, W - 70, hp=BOSS_HP[min(s.area, len(BOSS_HP) - 1)])
+        s.boss, s.boss_spawned = e, True
+        s.banner = [f"BOSS: {e.name.upper()}", 3.0]
+        s.revive()
+        s.shake = 6
+        return e
 
     def hurt(s, e, dmg, kb):
         if e.hp <= 0: return
-        dmg = int(dmg)
-        e.hp -= dmg; e.flash, e.kb = 0.12, kb
-        if e.kind != "dummy": e.state, e.st = "rest", 0.3
-        s.texts.append([e.x, e.y - e.d["h"] - 6, str(dmg), WHITE, 0.7]); s.burst(e.x, e.y - e.d["h"] / 2, (255, 240, 200), 6, 90)
+        d = e.d
+        if d.get("dodge") and e.dodge_cd <= 0 and e.state in ("walk", "wind") and e.stun <= 0 and e.frozen <= 0 and e.kind != "dummy":
+            e.dodge_cd = d["dodge"]  # cat beast men sidestep the first hit
+            e.x = max(10, min(W - 10, e.x + (44 if kb > 0 else -44)))
+            s.texts.append([e.x, e.y - d["h"] - 6, "DODGE", CYAN, 0.6]); s.burst(e.x, e.y - 12, CYAN, 8, 80)
+            return
+        if d.get("shield") and e.stun <= 0 and e.frozen <= 0 and e.state != "wind" and ((kb > 0 and e.face < 0) or (kb < 0 and e.face > 0)):
+            dmg *= 0.1 if getattr(e, "guard_t", 0) > 0 else 0.3  # shield up: frontal hits glance off
+            s.texts.append([e.x, e.y - d["h"] - 16, "BLOCKED", STEEL, 0.6]); s.burst(e.x + e.face * 8, e.y - d["h"] / 2, STEEL, 5, 70)
+        dmg = max(1, int(dmg * (1.0 if e.kind == "dummy" else s.taken)))
+        e.hp -= dmg; e.flash, e.kb = 0.12, kb * e.kb_res
+        if e.kind != "dummy" and not e.is_boss: e.state, e.st = "rest", 0.3
+        s.texts.append([e.x, e.y - d["h"] - 6, str(dmg), WHITE, 0.7]); s.burst(e.x, e.y - d["h"] / 2, (255, 240, 200), 6, 90)
         s.shake = max(s.shake, 2)
         if e.kind == "dummy": e.hp = 9999; s.dummy_hits += 1
 
     def kill(s, e):
         s.enemies.remove(e); s.kills += 1
-        s.corpses.append(dict(x=e.x, y=FLOOR if e.kind == "bat" else e.y, kind=e.kind, tint=e.tint, hold=0.0, looted=False))
+        s.corpses.append(dict(x=e.x, y=FLOOR if is_flyer(e.kind) else e.y, kind=e.kind, tint=e.tint, hold=0.0, looted=False, boss=e.is_boss))
         s.burst(e.x, e.y - 10, (230, 230, 230), 16, 120); s.shake = 5
+        if e.is_boss: s.boss_defeated(e)
+
+    def boss_defeated(s, e):
+        s.eprojs, s.hazards = [], []
+        for o in s.enemies:  # the boss's summons fall with it
+            if o.kind != "dummy": o.hp = 0
+        s.portal = True
+        s.banner = ["BOSS DEFEATED! Loot the spoils, then take the portal >>", 4.0]
+        s.revive()
+        s.burst(e.x, e.y - 20, GOLD, 40, 200); s.shake = 12
+        if s.A.get("chest"):  # drop it beside the corpse so holding [loot] never starts the wrong thing
+            s.chest = dict(x=float(max(40, min(W - 70, e.x - 55 if e.x > W / 2 else e.x + 55))), y=FLOOR, hold=0.0, used=set())
+
+    # ---- enemy projectiles / hazards
+    def eshot(s, src, x, y, vx, vy, dmg, kind, g=0.0, life=3.0, blast=0):
+        s.eprojs.append(dict(x=float(x), y=float(y), vx=vx, vy=vy, g=g, dmg=dmg * getattr(src, "dscale", 1.0) * s.dealt, life=life, kind=kind, src=src, blast=blast))
+
+    def enemy_shoot(s, e, r, t):
+        sx, sy = e.x + e.face * 12, e.y - e.d["h"] * 0.6
+        ang = math.atan2((t.y - 16) - sy, t.x - sx)
+        s.eshot(e, sx, sy, math.cos(ang) * r["speed"], math.sin(ang) * r["speed"], r["dmg"], r["shot"])
+        s.burst(sx, sy, (255, 230, 120), 4, 60)
+
+    def hazard(s, kind, x0, x1, y0, y1, warn, life, dmg, src):
+        s.hazards.append(dict(kind=kind, x0=x0, x1=x1, y0=y0, y1=y1, warn=warn, life=life, dmg=dmg, hit=set(), src=src))
+
+    def update_threats(s, dt):
+        for h in s.hazards[:]:
+            if h["warn"] > 0:
+                h["warn"] -= dt
+                continue
+            h["life"] -= dt
+            for p in s.players:
+                if not p.down and p.i not in h["hit"] and h["x0"] <= p.x + 4 and p.x - 4 <= h["x1"] and h["y0"] <= p.y and h["y1"] >= p.y - 30:
+                    h["hit"].add(p.i)
+                    p.take(h["dmg"], None, s, None)
+            if h["life"] <= 0: s.hazards.remove(h)
+        for pr in s.eprojs[:]:
+            pr["vy"] += pr["g"] * dt
+            pr["x"] += pr["vx"] * dt; pr["y"] += pr["vy"] * dt; pr["life"] -= dt
+            gone = pr["life"] <= 0 or not -12 < pr["x"] < W + 12 or pr["y"] < -30
+            hit = None
+            for p in s.players:
+                if p.down or abs(pr["x"] - p.x) > 8 or not (p.y - 32 < pr["y"] < p.y + 2): continue
+                if pr["kind"] == "wave" and p.y < FLOOR - 14: continue  # shockwaves travel along the ground: jump them
+                hit = p
+                break
+            if pr["blast"] and (hit or pr["y"] >= FLOOR - 4):
+                s.explode(pr)
+                s.eprojs.remove(pr)
+                continue
+            if hit:
+                if hit.block and hit.block_t < 0.2 and (pr["x"] - hit.x) * hit.face >= 0 and pr["kind"] != "wave":  # perfect block reflects it
+                    hit.blocks += 1; hit.perfects += 1
+                    s.projs.append(dict(kind="knife", x=pr["x"], y=pr["y"], vx=-pr["vx"] * 1.2, vy=-pr["vy"], dmg=max(30, hit.atk * 2), life=1.5, pierce=False, hit=set()))
+                    s.texts.append([hit.x, hit.y - 46, "REFLECTED!", GOLD, 1.0]); s.burst(pr["x"], pr["y"], GOLD, 10, 100)
+                else:
+                    src = pr["src"] if pr["src"] in s.enemies else None
+                    hit.take(pr["dmg"], pr["x"], s, src)
+                s.eprojs.remove(pr)
+            elif gone or pr["y"] > FLOOR + 6:
+                s.eprojs.remove(pr)
+
+    def explode(s, pr):
+        s.burst(pr["x"], pr["y"], (255, 160, 50), 22, 150); s.shake = max(s.shake, 5)
+        for p in s.players:
+            if not p.down and abs(p.x - pr["x"]) <= pr["blast"] and abs(p.y - pr["y"]) < 40:
+                p.take(pr["dmg"], pr["x"], s, None)
 
     def slash_hit(s, p, reach=34, dmg=None):
         x0, x1 = (p.x - 4, p.x + reach) if p.face > 0 else (p.x - reach, p.x + 4)
@@ -71,13 +183,13 @@ class Arena:
     # ---- Primary Skill (cast)
     def cast(s, p):
         c = p.cls
-        p.cast_cd, p.casts, p.hitset = CLASSES[c]["cd"], p.casts + 1, set()
+        p.cast_cd, p.casts, p.hitset = CLASSES[c]["cd"] * p.cd_mult, p.casts + 1, set()
         if c == "Knight":
             p.skill, p.skill_t, p.inv = "charge", 0.22, max(p.inv, 0.3)
         elif c == "Tank":
             s.hit_radius(p.x, p.y - 10, 58, p.atk * 1.5, 200)
             for e in s.enemies:
-                if abs(e.x - p.x) < 62 and e.kind != "dummy": e.stun = 1.5
+                if abs(e.x - p.x) < 62 and e.kind != "dummy": e.stun = 1.5 * e.stun_mult
             s.burst(p.x, p.y, (255, 220, 150), 26, 170); s.shake = 9
         elif c == "Fighter":
             p.skill, p.skill_t, p.tick = "whirl", 0.72, 0.0
@@ -97,7 +209,7 @@ class Arena:
     # ---- Secondary Skill (cast2)
     def cast2(s, p):
         c = p.cls
-        p.cast2_cd, p.casts2 = CLASSES[c]["cd2"], p.casts2 + 1
+        p.cast2_cd, p.casts2 = CLASSES[c]["cd2"] * p.cd_mult, p.casts2 + 1
         if c == "Knight":  # Aegis Banner
             for ally in s.players:
                 if not ally.down and abs(ally.x - p.x) < 95:
@@ -112,8 +224,8 @@ class Arena:
             s.texts.append([p.x, p.y - 40, "+30 SHIELD", CYAN, 1.0])
             for e in s.enemies:
                 if abs(e.x - p.x) < 140 and e.kind != "dummy":
-                    e.kb = (1 if p.x > e.x else -1) * 180
-                    e.stun = max(e.stun, 0.6)
+                    e.kb = (1 if p.x > e.x else -1) * 180 * e.kb_res
+                    e.stun = max(e.stun, 0.6 * e.stun_mult)
             s.burst(p.x, p.y - 14, CYAN, 22, 130); s.shake = 5
         elif c == "Fighter":  # Blade Wave
             s.projs.append(dict(kind="wave", x=p.x + 14 * p.face, y=p.y - 16, vx=290 * p.face, vy=0.0, dmg=p.atk * 1.35, life=1.2, pierce=True, hit=set()))
@@ -122,7 +234,7 @@ class Arena:
             s.hit_radius(p.x, p.y - 14, 68, p.atk * 1.15, 90)
             for e in s.enemies:
                 if abs(e.x - p.x) < 72 and e.kind != "dummy":
-                    e.frozen = 2.0
+                    e.frozen = 2.0 * e.stun_mult
             s.burst(p.x, p.y - 14, CYAN, 28, 160); s.shake = 5
         else:  # Rogue Fan of Knives
             p.vx = -p.face * 150
@@ -218,7 +330,7 @@ class Arena:
                 if m.score >= 0.4:
                     c["looted"] = True
                     s.looted += 1
-                    it = roll_loot(m.kind, m.score)
+                    it = roll_loot(m.kind, min(1.0, m.score + (0.3 if c.get("boss") else 0.0)))
                     s.pending[p.i].append(it)
                     s.texts.append([c["x"], c["y"] - 34, it["name"], RARITY[it["tier"]][1], 2.5])
                 else:
@@ -228,6 +340,28 @@ class Arena:
                     s.texts.append([c["x"], c["y"] - 34, "Failed - no loot!" + (" Try again!" if s.tut else ""), RED, 2.2])
                 s.state, s.loot = "play", None
 
+    # ---- holy chest (levels with a chest: each player rolls their own class weapon and chooses Take / Leave)
+    def start_chest(s, p):
+        s.cm = dict(p=p, offer=roll_holy(p.cls), sel=0, t=0.0)
+        s.state = "chest"
+
+    def update_chest(s, dt, mo):
+        C = s.cm
+        m = mo[C["p"].i]
+        C["t"] += dt
+        if C["t"] < 0.5: return
+        if m.swing == "left": C["sel"] = 0
+        elif m.swing == "right": C["sel"] = 1
+        if m.slash_p:
+            p, w = C["p"], C["offer"]
+            if C["sel"] == 0:
+                apply_gear(p, w)
+                s.texts.append([p.x, p.y - 44, f"Equipped {w['name']}", (190, 100, 240) if w["cursed"] else GOLD, 2.2])
+            else:
+                s.texts.append([p.x, p.y - 44, "Left it behind", STEEL, 1.5])
+            s.chest["used"].add(p.i)
+            s.state, s.cm = "play", None
+
     # ---- update
     def fx(s, dt):
         for pt in s.parts[:]:
@@ -236,32 +370,24 @@ class Arena:
         for tx in s.texts[:]:
             tx[1] -= 18 * dt; tx[4] -= dt
             if tx[4] <= 0: s.texts.remove(tx)
-        for m in s.amb:
-            i = s.area
-            if i == 0: m["y"] -= 4 * dt; m["x"] += math.sin(s.t + m["p"]) * 4 * dt
-            elif i == 1: m["x"] += math.sin(s.t * .7 + m["p"]) * 14 * dt; m["y"] += math.cos(s.t * .9 + m["p"]) * 10 * dt
-            elif i == 2: m["y"] -= (18 + m["p"] * 3) * dt; m["x"] += math.sin(s.t * 1.4 + m["p"]) * 8 * dt
-            elif i == 3: m["y"] -= (25 + m["p"] * 4) * dt; m["x"] += math.sin(s.t + m["p"]) * 10 * dt
-            elif i == 4: m["y"] += (20 + m["p"] * 3) * dt; m["x"] += math.sin(s.t + m["p"]) * 10 * dt
-            else: m["y"] -= (8 + m["p"] * 2) * dt; m["x"] += math.cos(s.t * .8 + m["p"]) * 12 * dt
-            if m["y"] < 0: m["y"] = FLOOR
-            if m["y"] > FLOOR: m["y"] = 0
-            m["x"] %= W
+        move_ambient(s.area, s.amb, s.t, dt)
 
     def update(s, dt, mo):
         s.t += dt
         s.shake, s.banner[1] = max(0, s.shake - 30 * dt), s.banner[1] - dt
         s.fx(dt)
         if s.state == "loot": s.update_loot(dt, mo); return
+        if s.state == "chest": s.update_chest(dt, mo); return
         if s.state == "failed":
             s.fail_t += dt
             if s.fail_t > 0.8 and any(m.slash_p for m in mo): s.result = "retry"
             return
         for p in s.players: p.update(dt, mo[p.i], s)
-        while s.queue and s.queue[0][0] <= s.t: s.spawn(s.queue.pop(0)[1])
+        while s.queue and s.queue[0][0] <= s.t: s.spawn(s.queue.pop(0)[1], dscale=1.0)
         for e in s.enemies[:]:
             e.update(dt, s)
-            if e.hp <= 0: s.kill(e)
+            if e.hp <= 0 and e in s.enemies: s.kill(e)
+        s.update_threats(dt)
         for pr in s.projs[:]:
             pr["x"] += pr["vx"] * dt
             pr["y"] += pr["vy"] * dt
@@ -293,6 +419,13 @@ class Arena:
             if who and c["hold"] >= 0.5:
                 s.start_loot(who[0], c)
                 break
+        ch = s.chest
+        if ch and s.state == "play":
+            who = [p for p in s.players if not p.down and p.i not in ch["used"] and mo[p.i].interact_h and abs(p.x - ch["x"]) < 28 and abs(p.y - ch["y"]) < 30]
+            ch["hold"] = ch["hold"] + dt if who else max(0, ch["hold"] - 2 * dt)
+            if who and ch["hold"] >= 0.5:
+                ch["hold"] = 0.0
+                s.start_chest(who[0])
         if s.tut:
             for p in s.players:
                 if p.down:
@@ -304,12 +437,14 @@ class Arena:
                 if mo[0].slash_p and s.t > 0.5: s.result = "menu"
             elif s.tut_info()[2]:
                 s.goto(s.step + 1)
+        elif s.gallery:
+            s.revive(1.0)
         else:
-            if not s.queue and not [e for e in s.enemies if e.kind != "dummy"] and not s.portal:
-                s.portal = True; s.banner = ["AREA CLEARED! Loot the corpses, then enter the portal >>", 4.0]
-                for p in s.players:
-                    if p.down: p.down, p.hp = False, p.maxhp * 0.4
-            if s.portal and any(not p.down and p.x > W - 40 for p in s.players): s.result = "next"
+            foes = [e for e in s.enemies if e.kind != "dummy"]
+            if not s.queue and not foes and not s.boss_spawned: s.spawn_boss()
+            if s.portal: s.portal_t += dt
+            # grace period: a player who happens to stand at the exit when the boss falls must not be whisked away before looting
+            if s.portal and s.portal_t > PORTAL_GRACE and any(not p.down and p.x > W - 40 for p in s.players): s.result = "next"
             if all(p.down for p in s.players):
                 s.state, s.pending = "failed", [[] for _ in s.players]
 
@@ -321,37 +456,45 @@ class Arena:
             bar(x, 19, 120, 7, p.hp / p.maxhp, RED if p.hp > p.maxhp * .3 else (255, 120, 40))
             if p.shield > 0:
                 bar(x, 19, int(120 * min(1.0, p.shield / 30.0)), 3, 1.0, CYAN)
-            cd1 = 1 - p.cast_cd / d["cd"]
-            cd2 = 1 - p.cast2_cd / d["cd2"]
+            cd1 = 1 - p.cast_cd / (d["cd"] * p.cd_mult)
+            cd2 = 1 - p.cast2_cd / (d["cd2"] * p.cd_mult)
             bar(x, 30, 58, 4, cd1, CYAN if cd1 >= 1 else STEEL_D)
             bar(x + 62, 30, 58, 4, cd2, GOLD if cd2 >= 1 else STEEL_D)
             text(f"[{kn(p.i, 'cast')}] {d['skill'][:9]}", x, 37, WHITE if cd1 >= 1 else STEEL_D)
             text(f"[{kn(p.i, 'cast2')}] {d['skill2'][:9]}", x, 48, GOLD if cd2 >= 1 else STEEL_D)
             if not s.tut:
                 text(f"Unbanked loot: {len(s.pending[p.i])}", x, 60, GOLD)
+                if p.weapon:
+                    text(p.weapon["name"][:20], x, 72, (190, 100, 240) if p.weapon["cursed"] else GOLD)
         if not s.tut:
-            text(f"AREA {s.area + 1}/{len(AREAS)}: {s.A['name']}", W // 2, 6, WHITE, font, True)
+            b = s.boss if (s.boss and s.boss.hp > 0) else None
+            text(b.name.upper() if b else f"LEVEL {s.area + 1}/{NUM_LEVELS}: {s.A['name']}", W // 2, 6, RED if b else WHITE, font, True)
+            if b:
+                bar(150, 18, 180, 8, b.hp / b.maxhp, RED)
+                for f in (.66, .33): pygame.draw.rect(gfx.canvas, INK, (150 + int(180 * f), 18, 1, 8))
+            if s.tier > 0:
+                text(f"Threat x{s.dealt:.2f}  (foes take x{s.taken:.2f})", W // 2, 30 if b else 17, (255, 150, 70), font, True)
+            if s.god: text("GOD MODE", W // 2, 42, GREEN, font, True)
 
     def draw(s):
         use(world)
         world.blit(get_bg(s.area), (0, 0))
-        if s.area == 0: draw_torches(s.t)
-        elif s.area == 5: draw_runes(s.t)
+        A = s.A
+        if A.get("torches"): draw_torches(s.t, (130, 76, 24) if s.area != 2 else (150, 120, 50))
+        if A.get("runes"): draw_runes(s.t, (80, 40, 130) if s.area != 3 else (30, 110, 60))
+        n, col, shape, _ = A["amb"]
         for m in s.amb:
-            col = [(150, 140, 180), (230, 240, 120), (140, 235, 250), (255, 150, 50), (255, 255, 255), (200, 150, 255)][s.area]
-            if s.area == 1 and math.sin(s.t * 3 + m["p"]) > 0:
+            if shape == "glow" and math.sin(s.t * 3 + m["p"]) > 0:
                 glow(m["x"], m["y"], 8, (90, 100, 20))
-            if s.area == 2:
-                pygame.draw.circle(gfx.canvas, col, (int(m["x"]), int(m["y"])), 2, 1)
-            else:
-                pygame.draw.rect(gfx.canvas, col, (int(m["x"]), int(m["y"]), 2 if s.area else 1, 2 if s.area else 1))
+            sz = 2 if s.area else 1
+            pygame.draw.rect(gfx.canvas, col, (int(m["x"]), int(m["y"]), sz, sz))
         if s.portal:
             x, y = W - 28, FLOOR
             col = lerp((90, 60, 200), (160, 230, 255), 0.5 + 0.5 * math.sin(s.t * 4))
             pygame.draw.rect(gfx.canvas, INK, (x - 17, y - 56, 34, 56)); pygame.draw.circle(gfx.canvas, INK, (x, y - 56), 17)
             pygame.draw.rect(gfx.canvas, col, (x - 13, y - 56, 26, 56)); pygame.draw.circle(gfx.canvas, col, (x, y - 56), 13)
             glow(x, y - 40, 50, (60, 50, 120))
-            text("NEXT AREA", W - 4, y - 90 + int(math.sin(s.t * 3) * 3), WHITE, font, right=True)
+            text("UP THE CASTLE", W - 4, y - 90 + int(math.sin(s.t * 3) * 3), WHITE, font, right=True)
         for c in s.corpses:
             fr = CORPSE[(c["kind"], c["tint"] if c["kind"] == "slime" else 0)]
             blit_ent(fr, c["x"], c["y"], False, (-60, -60, -60) if c["looted"] else None)
@@ -361,19 +504,43 @@ class Arena:
                 near = [p for p in s.players if not p.down and abs(p.x - c["x"]) < 26 and abs(p.y - c["y"]) < 30]
                 if near: text(f"HOLD [{kn(near[0].i, 'interact')}]", c["x"], c["y"] - 50, P_COL[near[0].i], font, True)
                 if c["hold"] > 0: bar(int(c["x"]) - 12, int(c["y"]) - 42, 24, 4, c["hold"] / 0.5, GOLD)
+        ch = s.chest
+        if ch:
+            used = len(ch["used"]) >= len(s.players)
+            x, y = int(ch["x"]), int(ch["y"])
+            box(gfx.canvas, BROWN_D if used else BROWN, x - 11, y - 12, 22, 12); box(gfx.canvas, BROWN_D if used else (150, 96, 60), x - 11, y - 19, 22, 8)
+            pygame.draw.rect(gfx.canvas, GOLD, (x - 11, y - 13, 22, 2)); pygame.draw.rect(gfx.canvas, GOLD, (x - 2, y - 14, 4, 5))
+            if not used:
+                glow(x, y - 14 + math.sin(s.t * 4) * 2, 30, (130, 110, 40))
+                near = [p for p in s.players if not p.down and p.i not in ch["used"] and abs(p.x - ch["x"]) < 28 and abs(p.y - ch["y"]) < 30]
+                if near: text(f"HOLD [{kn(near[0].i, 'interact')}] HOLY CHEST", ch["x"], y - 40, P_COL[near[0].i], font, True)
+                if ch["hold"] > 0: bar(x - 12, y - 32, 24, 4, ch["hold"] / 0.5, GOLD)
+        for hz in s.hazards:
+            r = pygame.Rect(int(hz["x0"]), int(hz["y0"]), int(hz["x1"] - hz["x0"]), int(hz["y1"] - hz["y0"]))
+            if hz["warn"] > 0:
+                pygame.draw.rect(gfx.canvas, (220, 60, 60), r, 1)
+                if int(s.t * 12) % 2: pygame.draw.rect(gfx.canvas, (120, 30, 40), r.inflate(-2, -2), 1)
+            elif hz["kind"] == "beam":
+                pygame.draw.rect(gfx.canvas, (255, 90, 90), r); pygame.draw.rect(gfx.canvas, WHITE, r.inflate(0, -r.h + 4))
+            else:
+                pygame.draw.rect(gfx.canvas, (255, 240, 170), r); pygame.draw.rect(gfx.canvas, WHITE, r.inflate(-r.w // 2, 0))
+                glow(r.centerx, FLOOR - 20, 40, (120, 100, 40))
         ents = [(e.y, e) for e in s.enemies] + [(p.y, p) for p in s.players if not p.down]
         for _, o in sorted(ents, key=lambda z: z[0]):
             if isinstance(o, Enemy):
                 fr = ENEMY[(o.kind, o.tint if o.kind == "slime" else 0)]
-                sy = FLOOR if o.kind == "bat" else o.y
-                pygame.draw.ellipse(gfx.canvas, (10, 8, 16), (o.x - 9, sy - 2, 18, 4))
+                sy = FLOOR if is_flyer(o.kind) else o.y
+                sw = max(18, o.d["w"] + 4)
+                pygame.draw.ellipse(gfx.canvas, (10, 8, 16), (o.x - sw / 2, sy - 2, sw, 4))
                 tint = (0, 90, 130) if o.frozen > 0 else ((110, 0, 0) if (o.state == "wind" and int(s.t * 14) % 2 == 0) else ((110, 110, 110) if o.flash > 0 else None))
-                blit_ent(fr[int(o.anim * 6) % len(fr)], o.x, o.y, o.face > 0, tint)
+                blit_ent(fr[int(o.anim * 6) % len(fr)], o.x, o.y, o.face < 0, tint)
                 if o.frozen > 0:
-                    pygame.draw.rect(gfx.canvas, CYAN, (int(o.x) - 8, int(o.y - o.d["h"]), 16, o.d["h"]), 1)
+                    pygame.draw.rect(gfx.canvas, CYAN, (int(o.x - o.d["w"] / 2), int(o.y - o.d["h"]), o.d["w"], o.d["h"]), 1)
                 elif o.state == "wind":
                     text("!", o.x - 2, o.y - o.d["h"] - 16, RED, mid)
-                if o.hp < o.maxhp < 9000: bar(int(o.x) - 10, int(o.y - o.d["h"]) - 8, 20, 3, o.hp / o.maxhp, RED)
+                if o.d.get("shield") and o.state != "wind" and o.stun <= 0:
+                    pygame.draw.line(gfx.canvas, STEEL, (o.x + o.face * 9, o.y - o.d["h"] + 6), (o.x + o.face * 9, o.y - 4), 2)
+                if o.hp < o.maxhp < 9000 and not o.is_boss: bar(int(o.x) - 10, int(o.y - o.d["h"]) - 8, 20, 3, o.hp / o.maxhp, RED)
             else:
                 pygame.draw.ellipse(gfx.canvas, (10, 8, 16), (o.x - 9, o.y - 2, 18, 4))
                 if o.inv > 0 and o.dash_t <= 0 and int(s.t * 24) % 2: continue
@@ -405,13 +572,34 @@ class Arena:
             else:
                 d = 1 if pr["vx"] >= 0 else -1
                 pygame.draw.line(gfx.canvas, BLADE, (pr["x"] - d * 5, pr["y"]), (pr["x"] + d * 5, pr["y"]), 2)
+        for pr in s.eprojs:
+            x, y, k = int(pr["x"]), int(pr["y"]), pr["kind"]
+            if k == "bullet":
+                pygame.draw.line(gfx.canvas, (255, 240, 140), (x, y), (x - int(pr["vx"] / 60), y - int(pr["vy"] / 60)), 2); glow(x, y, 8, (120, 100, 30))
+            elif k == "soul":
+                glow(x, y, 16, (30, 120, 60)); pygame.draw.circle(gfx.canvas, (110, 240, 140), (x, y), 4); pygame.draw.circle(gfx.canvas, WHITE, (x, y), 2)
+            elif k == "laser":
+                pygame.draw.line(gfx.canvas, (255, 90, 120), (x, y), (x - int(pr["vx"] / 25), y - int(pr["vy"] / 25)), 2); glow(x, y, 10, (120, 30, 50))
+            elif k == "wave":
+                d = 1 if pr["vx"] >= 0 else -1
+                pygame.draw.polygon(gfx.canvas, (255, 220, 150), [(x - d * 6, y), (x + d * 4, y - 8), (x + d * 4, y)])
+            elif k == "dyn":
+                pygame.draw.rect(gfx.canvas, (200, 50, 50), (x - 3, y - 2, 6, 4)); pygame.draw.rect(gfx.canvas, GOLD, (x - 1, y - 5, 2, 3))
+            else:  # rocket
+                pygame.draw.rect(gfx.canvas, WHITE, (x - 3, y - 2, 6, 4)); glow(x, y, 14, (160, 90, 30))
         for pt in s.parts: pygame.draw.rect(gfx.canvas, pt[5], (int(pt[0]), int(pt[1]), pt[6], pt[6]))
         for tx in s.texts: text(tx[2], tx[0], tx[1], tx[3], font, True)
+        if s.debug:
+            for o in s.enemies: pygame.draw.rect(gfx.canvas, (255, 60, 60), (int(o.x - o.d["w"] / 2), int(o.y - o.d["h"]), o.d["w"], o.d["h"]), 1)
+            for o in s.players: pygame.draw.rect(gfx.canvas, (60, 255, 120), (int(o.x - 6), int(o.y - 30), 12, 30), 1)
         use(main_cv)
         main_cv.fill(INK)
         main_cv.blit(world, (int(random.uniform(-1, 1) * s.shake), int(random.uniform(-1, 1) * s.shake)))
         main_cv.blit(VIGNETTE, (0, 0))
         s.draw_hud()
+        if s.A.get("hint") and not s.tut and not s.gallery and s.t < 14:
+            text(f"Slash {s.both('slash')}  Block {s.both('block')}  Dash {s.both('dash')}", W // 2, H - 40, STEEL, font, True)
+            text(f"Skill 1 {s.both('cast')}  Skill 2 {s.both('cast2')}  Loot corpses: HOLD {s.both('interact')}", W // 2, H - 29, STEEL, font, True)
         if s.banner[1] > 0 and not s.tut: text(s.banner[0], W // 2, 78, GOLD, mid, True)
         if s.tut:
             title, lines, done, prog = s.tut_info()
@@ -421,12 +609,40 @@ class Arena:
             text(f"{'STEP %d/8: ' % (s.step + 1) if s.step < 8 else ''}{title}", 240, 8, GOLD, font, True)
             for k, ln in enumerate(ls): text(ln, 138, 23 + k * 11)
             if prog: text(f"Progress: {prog}", 138, 23 + len(ls) * 11, CYAN)
-            text("Esc = menu", W - 6, H - 14, STEEL_D, font, right=True)
+            text("Esc = menu", W - 6, H - 12, STEEL_D, font, right=True)
+            hot = SKIP_STATE["hot"]
+            pygame.draw.rect(main_cv, INK, SKIP_RECT); pygame.draw.rect(main_cv, GOLD if hot else STEEL_D, SKIP_RECT, 1)
+            text("SKIP TUTORIAL [TAB]", SKIP_RECT.centerx, SKIP_RECT.y + 3, GOLD if hot else WHITE, font, True)
         if s.state == "failed":
             main_cv.blit(DIM, (0, 0))
             title_text("DEFEATED", W // 2, 70, RED)
             text("Both heroes fell - no loot kept from this area!", W // 2, 130, WHITE, mid, True)
             text(f"Press Slash  P1 [{kn(0, 'slash')}]  P2 [{kn(1, 'slash')}]  to retry the area", W // 2, 160, STEEL, font, True)
+        if s.state == "chest":
+            C = s.cm
+            w, p = C["offer"], C["p"]
+            main_cv.blit(DIM, (0, 0))
+            panel = pygame.Surface((PW + 40, 180))
+            use(panel)
+            panel.fill((24, 18, 36)); pygame.draw.rect(panel, (190, 100, 240) if w["cursed"] else GOLD, (2, 2, PW + 36, 176), 1)
+            text("HOLY CHEST", (PW + 40) // 2, 8, GOLD, mid, True)
+            text(f"P{p.i + 1} {p.cls}", (PW + 40) // 2, 26, P_COL[p.i], font, True)
+            text(w["name"], (PW + 40) // 2, 46, (190, 100, 240) if w["cursed"] else GOLD, mid, True)
+            new_atk = int(round((8 + CLASSES[p.cls]["atk"] * 2) * w["atk"]))
+            text(f"ATK {p.atk} -> {new_atk}  (+{int((w['atk'] - 1) * 100)}%)", (PW + 40) // 2, 68, GREEN, font, True)
+            y = 84
+            if w["cursed"]:
+                text("CURSED: " + w["curse"], (PW + 40) // 2, y, (190, 100, 240), font, True); y += 12
+                text(w["curse_text"], (PW + 40) // 2, y, (230, 150, 255), font, True); y += 12
+                text("Far stronger - at a price.", (PW + 40) // 2, y + 4, STEEL, font, True)
+            else:
+                text("A blessed weapon. No strings attached.", (PW + 40) // 2, y, STEEL, font, True)
+            for k, lab in enumerate(("TAKE", "LEAVE")):
+                on = C["sel"] == k
+                text(f"> {lab} <" if on else lab, 50 + k * 80, 130, (GREEN if k == 0 else RED) if on else STEEL_D, mid, True)
+            text(f"[{kn(p.i, 'left')}]/[{kn(p.i, 'right')}] choose   [{kn(p.i, 'slash')}] confirm", (PW + 40) // 2, 160, P_COL[p.i], font, True)
+            use(main_cv)
+            main_cv.blit(panel, ((W - PW - 40) // 2, (H - 180) // 2))
         if s.state == "loot":
             L = s.loot
             main_cv.blit(DIM, (0, 0))

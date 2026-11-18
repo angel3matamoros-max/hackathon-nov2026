@@ -92,9 +92,10 @@ def glow(x, y, r, color):
 def blit_ent(fr, x, y, flip=False, tint=None):
     if flip:
         fr = pygame.transform.flip(fr, True, False)
-    if tint:
+    if tint:  # positive components brighten, negative ones darken (pygame rejects negative colours, so split them)
         fr = fr.copy()
-        fr.fill(tint + (0,), special_flags=pygame.BLEND_RGB_ADD)
+        if any(v > 0 for v in tint): fr.fill(tuple(max(0, v) for v in tint) + (0,), special_flags=pygame.BLEND_RGB_ADD)
+        if any(v < 0 for v in tint): fr.fill(tuple(max(0, -v) for v in tint) + (0,), special_flags=pygame.BLEND_RGB_SUB)
     canvas.blit(fr, (int(x - fr.get_width() / 2), int(y - fr.get_height() + 1)))
 
 

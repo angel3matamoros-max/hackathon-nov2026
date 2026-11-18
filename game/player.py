@@ -34,9 +34,15 @@ class Player:
         s.hitset = set()
         s.travel = 0.0
         s.djumps = s.dashes = s.blocks = s.perfects = s.casts = s.casts2 = 0
+        s.weapon, s.dmg_taken, s.cd_mult, s.fly = None, 1.0, 1.0, False  # gear/curse/dev state
 
     def update(s, dt, m, a):
         if s.down: return
+        if s.fly:  # dev-mode noclip flight
+            s.x = max(10, min(W - 10, s.x + m.axis * 200 * dt)); s.y = max(30.0, min(float(FLOOR), s.y + (int(m.down_h) - int(m.jump_h)) * 200 * dt))
+            s.vx = s.vy = 0.0; s.py = s.y
+            if m.axis: s.face = m.axis
+            return
         for n in ("slash_cd", "cast_cd", "cast2_cd", "dash_cd", "inv", "stun", "drop", "flash", "coyote", "jbuf", "shield_t"):
             setattr(s, n, max(0.0, getattr(s, n) - dt))
         if s.shield_t <= 0:
@@ -150,18 +156,20 @@ class Player:
             s.coyote = 0.10
 
     def take(s, dmg, sx, a, src):
-        if s.down or s.inv > 0: return
-        if s.block and (sx - s.x) * s.face >= 0:
+        if s.down or s.inv > 0 or getattr(a, 'god', False): return
+        if s.block and sx is not None and (sx - s.x) * s.face >= 0:
             s.blocks += 1
             if s.block_t < 0.2:
-                s.perfects += 1; src.stun, src.state, src.st = 1.4, "rest", 0.4
+                s.perfects += 1
+                if src is not None and hasattr(src, "stun"):
+                    src.stun, src.state, src.st = 1.4 * src.stun_mult, "rest", 0.4
                 a.texts.append([s.x, s.y - 46, "PERFECT BLOCK!", GOLD, 1.0]); a.burst(s.x + s.face * 12, s.y - 16, GOLD, 12, 120); a.shake = 4
                 return
             dmg *= 0.2; s.kb = -s.face * 60
             a.texts.append([s.x, s.y - 42, "BLOCKED", CYAN, 0.6])
         else:
-            s.kb, s.stun = (1 if s.x >= sx else -1) * 120, 0.22
-        dmg = int(round(dmg * (1 - CLASSES[s.cls]["df"] * 0.04)))
+            s.kb, s.stun = (0 if sx is None else (1 if s.x >= sx else -1) * 120), 0.22
+        dmg = max(1, int(round(dmg * (1 - CLASSES[s.cls]["df"] * 0.04) * s.dmg_taken))) if dmg > 0 else 0
         s.inv, s.flash = 0.5, 0.15
         if dmg > 0 and s.shield > 0:
             absorbed = min(s.shield, dmg)
@@ -174,3 +182,15 @@ class Player:
         if s.hp <= 0:
             s.hp, s.down = 0, True
             a.burst(s.x, s.y - 14, P_COL[s.i], 22, 130); a.texts.append([s.x, s.y - 40, "DOWN!", RED, 1.5])
+
+
+def apply_gear(p, w):
+    """Equip weapon dict `w` (or None to unequip) on player `p`: ATK multiplier plus any curse (hp / dmg_taken / cd_mult)."""
+    d = CLASSES[p.cls]
+    p.weapon = w
+    p.atk = int(round((8 + d["atk"] * 2) * (w["atk"] if w else 1.0)))
+    p.dmg_taken = w.get("dmg_taken", 1.0) if w else 1.0
+    p.cd_mult = w.get("cd_mult", 1.0) if w else 1.0
+    new_max = max(1, int(round((d["hp"] * 12 + 12) * (w.get("hp", 1.0) if w else 1.0))))
+    ratio = p.hp / p.maxhp if p.maxhp else 1.0
+    p.maxhp, p.hp = new_max, max(1, min(new_max, int(round(new_max * ratio))))

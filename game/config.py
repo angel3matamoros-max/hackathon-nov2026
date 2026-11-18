@@ -33,12 +33,17 @@ def load_settings():
     try:
         with open(SAVE) as f:
             s = json.load(f)
+    except Exception:
+        return d
+    if not isinstance(s, dict):
+        return d
+    d["tutorial_done"] = bool(s.get("tutorial_done"))  # independent of key data so a partial file still counts
+    try:
         for p in range(2):
             for a in ACTIONS:
                 v = s["keys"][p].get(a)
                 if isinstance(v, int):
                     d["keys"][p][a] = v
-        d["tutorial_done"] = bool(s.get("tutorial_done"))
     except Exception:
         pass
     return d
@@ -57,3 +62,15 @@ def save_settings():
 
 def kn(p, a):
     return pygame.key.name(SET["keys"][p][a]).upper()
+
+
+# ================================================================ difficulty / dev flags
+DMG_TAKEN_STEP, DMG_DEAL_STEP = 0.75, 1.25  # per level: enemies take 25% less damage, deal 25% more (compounding)
+ALIEN_NAME = "Elon Musk"  # display name of the alien tycoon boss - change here to rename everywhere
+DEV = False  # set by main.py (--dev / ROGUE_DEV=1); never saved to settings
+
+
+def difficulty(level):
+    """(damage enemies TAKE multiplier, damage enemies DEAL multiplier) for a 0-based level / tier."""
+    level = max(0, int(level))
+    return DMG_TAKEN_STEP ** level, DMG_DEAL_STEP ** level
