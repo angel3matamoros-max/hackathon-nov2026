@@ -1,7 +1,27 @@
 [project]
 name = "idk218938923u"
 version = "0.1.0"
+description = "Rogue Loot - 2-player co-op pixel-art action game"
 requires-python = ">=3.12"
 dependencies = [
-    "pip>=26.3",
+    "pygame>=2.6",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "ruff>=0.6",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 160
+target-version = "py312"
+
+[tool.ruff.lint]
+# The codebase uses compact one-line statements and `s` as the self name on purpose.
+select = ["E9", "F"]
+ignore = ["F403", "F405"]

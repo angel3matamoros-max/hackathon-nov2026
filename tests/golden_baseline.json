@@ -1,0 +1,104 @@
+{
+ "0": {
+  "enemies": 0,
+  "hp": [
+   108,
+   60
+  ],
+  "kills": 5,
+  "portal": true,
+  "pos": [
+   423.9,
+   440.2
+  ],
+  "queue": 0,
+  "result": "next",
+  "state": "play",
+  "t": 14.55
+ },
+ "1": {
+  "enemies": 0,
+  "hp": [
+   108,
+   60
+  ],
+  "kills": 7,
+  "portal": true,
+  "pos": [
+   441.0,
+   435.6
+  ],
+  "queue": 0,
+  "result": "next",
+  "state": "play",
+  "t": 16.52
+ },
+ "2": {
+  "enemies": 0,
+  "hp": [
+   108,
+   60
+  ],
+  "kills": 7,
+  "portal": true,
+  "pos": [
+   441.6,
+   436.3
+  ],
+  "queue": 0,
+  "result": "next",
+  "state": "play",
+  "t": 10.57
+ },
+ "3": {
+  "enemies": 0,
+  "hp": [
+   103,
+   60
+  ],
+  "kills": 6,
+  "portal": true,
+  "pos": [
+   420.9,
+   441.3
+  ],
+  "queue": 0,
+  "result": "next",
+  "state": "play",
+  "t": 11.65
+ },
+ "4": {
+  "enemies": 0,
+  "hp": [
+   108,
+   60
+  ],
+  "kills": 7,
+  "portal": true,
+  "pos": [
+   461.2,
+   395.9
+  ],
+  "queue": 0,
+  "result": "next",
+  "state": "play",
+  "t": 12.38
+ },
+ "5": {
+  "enemies": 0,
+  "hp": [
+   108,
+   60
+  ],
+  "kills": 9,
+  "portal": true,
+  "pos": [
+   458.6,
+   470
+  ],
+  "queue": 0,
+  "result": "next",
+  "state": "play",
+  "t": 14.13
+ }
+}
