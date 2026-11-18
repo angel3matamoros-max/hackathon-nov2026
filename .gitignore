@@ -1,0 +1,9 @@
+.venv/
+.idea/
+__pycache__/
+*.pyc
+.DS_Store
+rogue_settings.json
+qa/shots/
+.pytest_cache/
+.ruff_cache/
