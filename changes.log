@@ -237,3 +237,18 @@
   files: n/a
   why:   owner asked to commit and push after the QA run. QA (ruff, pytest, selftest, qa/run_qa.py 7/7) passed; the qa agent found no blocking defects. Boss corpse now vanishes after 0.8 s (the boss chest is separate). Balance with multipliers on: L5 42%, L6 17% for the careful bot (4 seeds, noisy).
   notes: the commit also includes the previously uncommitted PS2 backend, arduino_ps2/, arduino_nunchuck/, tests/test_ps2.py and docs.
+
+[2026-11-20] feat: PS2 button glyphs in text and menu footers
+  files: game/gfx.py, game/padbridge.py, game/app.py, README.md
+  why:   owner asked for PS2 menu and control hints that show the real button shape instead of letters (square, not "SQ"). gfx.text() now draws tokens like {cross} as glyphs (glyph()), PS2_NAMES maps buttons and D-pad directions to those tokens, and app.hint() shows a glyph footer in menus when the PS2 pad is the active controller.
+  notes: glyphs were checked by rendering to a PNG (menu footer and HUD-style prompts). Not tried with a real PS2 pad. Keyboard text is unchanged (text() only parses strings containing braces).
+
+[2026-11-20] fix: mini-game prompts without the Cross on PS2
+  files: game/loot.py, README.md
+  why:   owner said the sensor is no longer working and the Cross does not work for the mini-games. Slash the Loot asked for the Cross (jump) on the PS2 pad. Its prompt is now "Tap the arrow on the D-pad, or hold it and press [Square]". The other mini-games already used only D-pad and Square on the PS2 pad (Dice Roll: Square, Lock Pick: D-pad, Parry: Square), and the README now says so.
+  notes: the mini-games still read the hand-controller fields (tilt / shake / swing / flick), which the PS2 pad fills from its D-pad and Square. Only the PS2 prompt changed; the keyboard prompt is unchanged. Not tried with a real PS2 pad.
+
+[2026-11-20] feat: sound effects and background music (generated in code)
+  files: game/sound.py, game/app.py, game/player.py, game/arena.py, README.md
+  why:   owner asked for sound effects and background music. game/sound.py synthesises the effects (menu, select, swing, jump, hit, block, hurt, wave, boss, portal, loot, fail) and two loops (menu, battle) with pygame.mixer, with no audio files. play() and music() do nothing when there is no mixer or ROGUE_SOUND=0. Hooks: app.py (menu moves and selects, music per mode), player.py (jump, swing, block, hurt), arena.py (hit, wave, boss, loot, fail).
+  notes: ruff, pytest (299 passed) and --selftest pass. The music loop takes about 0.5 s to generate the first time each track plays. Not listened to on real hardware; the tones are simple and there is no volume setting yet. Portal and victory sounds are defined but not hooked up yet (portal is not wired in; "portal" is still in sound.py).

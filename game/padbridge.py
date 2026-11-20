@@ -43,14 +43,15 @@ SHOVE_HOLD = 0.6                       # a shove holds the interact key for this
 # Which control drives which game action. Controls: joy_up, joy_down, joy_click, btn1, btn2, shield (tilt up), attack (swing),
 # shove (the thrust gesture). Change a right-hand side to remap, e.g. boost="btn1" to make button 1 the dash.
 PAD_NAMES = dict(joy_up="JOY UP", joy_down="JOY DOWN", joy_click="JOY CLICK", btn1="BTN1", btn2="BTN2", shield="PAD UP", attack="SWING", shove="SHOVE")
-PS2_NAMES = dict(CROSS="X", CIRCLE="O", SQUARE="SQ", TRIANGLE="TRI", UP="UP", DOWN="DOWN")
+PS2_NAMES = dict(CROSS="{cross}", CIRCLE="{circle}", SQUARE="{square}", TRIANGLE="{triangle}", L1="{l1}", R1="{r1}", L2="{l2}", R2="{r2}",
+                 UP="{up}", DOWN="{down}", LEFT="{left}", RIGHT="{right}", START="{start}", SELECT="{select}")  # drawn as button glyphs by gfx.text
 
 
 def control_labels(ps2):
     """Names shown in the UI for each action, for the controller that is sending data (PS2 pad or the Elegoo hand controller)."""
     if ps2:
         L = {a: PS2_NAMES.get(PS2_MAP[k], PS2_MAP[k]) for a, k in (("jump", "jump"), ("down", "down"), ("dash", "boost"), ("cast", "ability1"), ("cast2", "ability2"), ("block", "block"), ("slash", "slash"), ("interact", "interact"))}
-        return dict(L, left="LEFT", right="RIGHT", _name="PS2")
+        return dict(L, left="{left}", right="{right}", up="{up}", down="{down}", _name="PS2")
     L = {a: PAD_NAMES.get(MAP[k], MAP[k]) for a, k in (("jump", "jump"), ("down", "down"), ("dash", "boost"), ("cast", "ability1"), ("cast2", "ability2"), ("block", "block"), ("slash", "slash"), ("interact", "interact"))}
     return dict(L, left="SWING L", right="SWING R", _name="PAD")
 

@@ -44,7 +44,7 @@ The ELEGOO MEGA 2560 hand controller (joystick, two buttons, a stick click, and 
 
 A **PS2 controller** on the same Mega also works (firmware in [arduino_ps2/](arduino_ps2/arduino_ps2.ino); wiring DATA 12, CMD 11, ATT 10, CLK 13, power 3.3V). Left stick or D-pad = walk and drop, X = jump, Square = attack, Circle = dash, L1 / R1 = skills, L2 = block, Triangle = interact; in menus Start or X confirms, Select or Circle goes back. The mapping is `PS2_MAP` at the top of [game/padbridge.py](game/padbridge.py).
 
-The on-screen hints (HUD, tutorial, loot and chest prompts) follow the controller in use: with the PS2 pad they read X / O / SQ / L1 and a `[PS2]` tag next to P1, with the Elegoo hand controller `[PAD]` and its control names, otherwise the keyboard keys.
+The on-screen hints (HUD, tutorial, loot and chest prompts, menu footers) follow the controller in use. With the PS2 pad they show the actual button shapes (a red circle, a blue cross, a pink square, a green triangle, arrows, L1 / R1 / L2 / R2 / ST / SE) and a `[PS2]` tag next to P1. With the Elegoo hand controller they show `[PAD]` and its control names, otherwise the keyboard keys.
 
 Run `.venv/bin/python main.py --pad-monitor` to see the raw values and every gesture, and to tune the thresholds. The full mapping, how the gestures work, and how to tune them are in [docs/controller-protocol.md](docs/controller-protocol.md).
 
@@ -182,7 +182,7 @@ Implemented in [game/loot.py](game/loot.py) (mini-games, holy chest) and [game/i
 | Slash the Loot | Swing in the direction the arrow points |
 | Parry the Mimic | Strike when the mimic is in the green zone |
 
-A score of 0.4 or higher gives an item. Failing loses that corpse's loot (in the tutorial you can retry). Boss corpses and caches add +0.3 to the score.
+The mini-games do not need the motion sensor. With the PS2 pad they use only the D-pad and Square (Dice Roll: mash Square, Lock Pick: D-pad left / right, Slash the Loot: tap a D-pad arrow or hold it and press Square, Parry: Square). A score of 0.4 or higher gives an item. Failing loses that corpse's loot (in the tutorial you can retry). Boss corpses and caches add +0.3 to the score.
 
 **Items are gear.** Every item has a slot (**Weapon, Armor, Charm**), a rarity (**Common, Rare, Epic**, and **Legendary** which only bosses give), and real effects written out in plain words:
 
@@ -265,12 +265,17 @@ docs/controller-protocol.md   The hand controller: wire format, mapping, gesture
 
 The **QA agent** ([.claude/agents/qa.md](.claude/agents/qa.md)) reviews the code and the outcomes (including the screenshots) and writes `qa/REPORT.md`.
 
+## Sound
+
+Sound effects and background music are generated in code by [game/sound.py](game/sound.py), so there are no audio files. A calm loop plays in the menus and a faster one in battles. Effects cover menu moves and selects, jumps, swings, hits, blocks, getting hurt, waves, the boss, and loot success or failure. Set `ROGUE_SOUND=0` to turn sound off. The game runs the same with no audio device.
+
 ## Known issues
 
 1. **The difficulty curve falls off a cliff at levels 5-6.** With the chosen compounding steps (x0.75 damage taken and x1.25 damage dealt per level, level 6 = x0.24 / x3.05), a careful scripted bot wins 100% of levels 1-4 but only about 8% of level 5 and 25% of level 6 (`uv run python qa/balance.py 4 careful`). With the multipliers off it wins 100% of every level. Bots are not humans, so playtest levels 4-6. To soften it, change `DMG_TAKEN_STEP` and `DMG_DEAL_STEP` in [game/config.py](game/config.py): at 0.85 / 1.15 the bot wins 75-83% of levels 5-6, at 0.90 / 1.10 it wins 100% / 91%.
 2. **Not built yet:** the side-scrolling Mario-style levels (levels 1-3 are still one-screen arenas; [game/scroll.py](game/scroll.py) has the helpers ready) and the castle-maker "free placement" mode (the maker is a wave composer only). The Gear screen and the boss chest are keyboard-only menus.
 3. **Minor QA nits left open:** the class-select title overlaps the role labels, the boss name and status text are hard to read over busy backgrounds, and "RESISTED" overlaps damage numbers. Thorns also reflect bullets (the description does not say so).
-4. **Hand controller gestures are untuned.** The board reads correctly, but the thresholds are first guesses. Use `--pad-monitor`, then the table in [docs/controller-protocol.md](docs/controller-protocol.md).
+4. **Sound is basic and has no volume setting.** The effects and loops are simple synthesised tones (see the Sound section). Turn them off with `ROGUE_SOUND=0`; a volume slider is not built yet.
+5. **Hand controller gestures are untuned.** The board reads correctly, but the thresholds are first guesses. Use `--pad-monitor`, then the table in [docs/controller-protocol.md](docs/controller-protocol.md).
 3. **Minor open QA notes** (Esc leaves a level without asking, a few overlapping labels, menus assume a keyboard): see [qa/REPORT.md](qa/REPORT.md).
 
 ### Bugs from v4 that were fixed on the way

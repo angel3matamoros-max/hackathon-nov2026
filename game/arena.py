@@ -1,7 +1,7 @@
 """Gameplay scene (waves, combat, loot flow) and the tutorial."""
 import math, random
 import pygame
-from . import gfx
+from . import gfx, sound
 from .config import *
 from .gfx import (text, title_text, wrap, fit_lines, bar, gem, glow, blit_ent, lerp, use, world, main_cv, VIGNETTE, DIM, font, mid, box)
 from .classes import CLASSES, bonus_for
@@ -78,6 +78,7 @@ class Arena:
             if p.down: p.down, p.hp = False, max(1, int(round(p.maxhp * frac)))
 
     def spawn_boss(s):
+        sound.play("boss")
         kind = s.A["boss"]
         if kind is None:  # a castle-maker level without a boss: clearing the waves opens the portal
             s.boss_spawned, s.portal = True, True
@@ -111,6 +112,7 @@ class Arena:
         if mult < 1.0: s.texts.append([e.x, e.y - d["h"] - 16, "RESISTED", STEEL, 0.5])
         dmg = max(1, int(dmg * mult * (2.0 if crit else 1.0) * (1.0 if e.kind == "dummy" else s.taken) + 0.5))  # round, not floor: truncation shaved up to 21% extra off weak hits at high tiers
         e.hp -= dmg; e.flash, e.kb = 0.12, kb * e.kb_res
+        sound.play("hit")
         if e.kind != "dummy" and not e.is_boss: e.state, e.st = "rest", 0.3
         s.texts.append([e.x, e.y - d["h"] - 6, str(dmg) + ("!" if crit else ""), GOLD if crit else WHITE, 0.7]); s.burst(e.x, e.y - d["h"] / 2, (255, 240, 200), 6, 90)
         if by and by.lifesteal and not by.down and e.kind != "dummy":
@@ -159,6 +161,7 @@ class Arena:
         s.queue = [[s.t + 0.6 + i * 0.55, k] for i, k in enumerate(kinds)]
         s.wave_live = True
         s.banner = [f"WAVE {s.wave + 1}/{len(s.waves)}", 2.0]
+        sound.play("wave")
 
     def wave_cleared(s):
         s.wave_live, s.wave_gap = False, 2.5
@@ -414,10 +417,12 @@ class Arena:
             if L["after"] > 1.3:
                 p, c = L["p"], L["c"]
                 if m.score >= 0.4:
+                    sound.play("loot")
                     c["looted"] = True; c["fade_t"] = 2.0
                     s.looted += 1
                     s.give(p, roll_item(min(1.0, m.score + (0.3 if c.get("boss") or c["kind"] == "cache" else 0.0))))
                 else:
+                    sound.play("fail")
                     c["hold"] = 0.0
                     if not s.tut:
                         c["looted"] = True; c["fade_t"] = 2.0

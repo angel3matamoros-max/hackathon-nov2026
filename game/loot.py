@@ -89,7 +89,9 @@ class SlashLoot(Mini):
     ARROW = [(-12, -5), (2, -5), (2, -11), (14, 0), (2, 11), (2, 5), (-12, 5)]
     ROT = {"right": lambda x, y: (x, y), "left": lambda x, y: (-x, y), "down": lambda x, y: (-y, x), "up": lambda x, y: (y, -x)}
 
-    def ctrl(s, p): return f"Press [{kn(p, 'left')}] [{kn(p, 'right')}] [{kn(p, 'jump')}] [{kn(p, 'down')}]"
+    def ctrl(s, p):
+        if PAD[p] and PAD[p].get("_name") == "PS2": return "Tap the arrow on the D-pad, or hold it and press [{square}]"  # PS2: no Cross, D-pad + Square only
+        return f"Press [{kn(p, 'left')}] [{kn(p, 'right')}] [{kn(p, 'jump')}] [{kn(p, 'down')}]"
 
     def __init__(s):
         s.res, s.tt, s.win, s.flash, s.msg = [], 0.0, 1.1, 0.0, ""

@@ -1,7 +1,7 @@
 """Screens and the main loop."""
 import sys
 import pygame
-from . import gfx
+from . import gfx, sound
 from .config import *
 from .gfx import text, title_text, wrap, use, main_cv, VIGNETTE, blit_ent, font, mid, big
 from .classes import CLASS_NAMES, CLASSES
@@ -38,6 +38,11 @@ def present():
     pygame.display.flip()
 
 
+def hint(keyboard, pad):
+    """Footer text: button glyphs while a PS2 pad is the controller in use (player 1), keyboard keys otherwise."""
+    return pad if (PAD[0] and PAD[0].get("_name") == "PS2") else keyboard
+
+
 def draw_menu(sel, t, items=("START", "TUTORIAL", "SETTINGS", "EXIT")):
     gfx.canvas.blit(get_bg(0), (0, 0)); draw_torches(t)
     gfx.canvas.blit(VIGNETTE, (0, 0))
@@ -47,7 +52,7 @@ def draw_menu(sel, t, items=("START", "TUTORIAL", "SETTINGS", "EXIT")):
         text(f"> {it} <" if i == sel else it, W // 2, 104 + i * 22, GOLD if i == sel else WHITE, mid, True)
     for k, cls in enumerate(("Knight", "Mage")):
         blit_ent(HERO[cls][1][int(t * 10) % 8], (t * 40 + k * 120) % (W + 60) - 30, FLOOR)
-    text("W/S or Up/Down: move    Enter/Space: select" + ("" if SET["tutorial_done"] else "    (First launch runs Tutorial)"), W // 2, 252, STEEL, font, True)
+    text(hint("W/S or Up/Down: move    Enter/Space: select" + ("" if SET["tutorial_done"] else "    (First launch runs Tutorial)"), "{up} {down} Move    {cross} Select    {start} Start" + ("" if SET["tutorial_done"] else "    (First launch runs Tutorial)")), W // 2, 252, STEEL, font, True)
 
 
 def draw_players(sel, t):
@@ -63,7 +68,7 @@ def draw_players(sel, t):
         for k in range(n):
             blit_ent(HERO[("Knight", "Mage")[k]][1][int(t * 10) % 8], cx + (k - (n - 1) / 2) * 34, 150)
         for k, ln in enumerate(wrap(sub, 28)): text(ln, cx, 160 + k * 11, STEEL, font, True)
-    text("A/D or Left/Right: choose    Enter/Space: confirm    Esc: back", W // 2, 252, STEEL, font, True)
+    text(hint("A/D or Left/Right: choose    Enter/Space: confirm    Esc: back", "{left} {right} Choose    {cross} Confirm    {circle} Back"), W // 2, 252, STEEL, font, True)
 
 
 def draw_select(sel, ready, t, solo=False):
@@ -105,7 +110,7 @@ def draw_settings(s_tab, s_row, listening):
             text(val, 380, y, CYAN if listening and sel_row else (GOLD if sel_row else STEEL), font, right=True)
         else:
             text("RESET TO DEFAULTS" if r == len(ACTIONS) else "BACK", W // 2, y + 4, GOLD if sel_row else WHITE, font, True)
-    text("W/S: move   A/D or Left/Right: switch player   Enter: rebind   Esc: back", W // 2, 253, STEEL, font, True)
+    text(hint("W/S: move   A/D or Left/Right: switch player   Enter: rebind   Esc: back", "{up} {down} Move    {left} {right} Player    {cross} Rebind    {circle} Back"), W // 2, 253, STEEL, font, True)
 
 
 def draw_victory(heroes, inv, gear):
@@ -121,7 +126,7 @@ def draw_victory(heroes, inv, gear):
             if it:
                 for ln in wrap(it["desc"], 40)[:2]: y += 11; text(ln, cx, y, WHITE, font, True)
             y += 16
-    text("Press Enter for the main menu", W // 2, 252, STEEL, font, True)
+    text(hint("Press Enter for the main menu", "Press {cross} or {start} for the main menu"), W // 2, 252, STEEL, font, True)
 
 
 class Game:
@@ -225,6 +230,10 @@ class Game:
         dn = any(k in (pygame.K_DOWN, pygame.K_s) for k in keys)
         ok = any(k in (pygame.K_RETURN, pygame.K_SPACE, pygame.K_KP_ENTER) for k in keys)
         back = pygame.K_ESCAPE in keys
+        if up or dn: sound.play("menu")
+        if ok: sound.play("select")
+        if s.mode == "game": sound.music("battle")
+        elif s.mode in ("menu", "devmenu", "settings", "players", "select", "castles", "maker"): sound.music("menu")
         getattr(s, "mode_" + s.mode)(dt, keys, up, dn, ok, back, clicks)
         if s.dev and s.mode == "game" and s.arena:
             s.dev.handle(s, keys)

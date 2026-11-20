@@ -3,6 +3,7 @@ import random
 from .config import *
 from .classes import CLASSES
 from .items import mods, SLOTS
+from . import sound
 
 
 def land(o, a):
@@ -97,6 +98,7 @@ class Player:
 
         if m.jump_p:
             s.jbuf = 0.12
+            sound.play("jump")
 
         if free:
             # jump / coyote jump / wall jump / double jump
@@ -130,6 +132,7 @@ class Player:
                     s.vy = min(s.vy, 0.0)
             if m.slash_p and s.slash_cd <= 0 and not s.block:
                 s.slash_t, s.slash_cd, s.hitset = 0.16, 0.34, set()
+                sound.play("swing")
             if m.cast_p and s.cast_cd <= 0 and s.skill is None:
                 a.cast(s)
             if m.cast2_p and s.cast2_cd <= 0 and s.skill is None:
@@ -186,6 +189,7 @@ class Player:
         if s.down or s.inv > 0 or getattr(a, 'god', False): return
         if s.block and sx is not None and (sx - s.x) * s.face >= 0:
             s.blocks += 1
+            sound.play("block")
             if s.block_t < 0.2 + s.block_window:
                 s.perfects += 1
                 if src is not None and hasattr(src, "stun"):
@@ -205,6 +209,7 @@ class Player:
             a.texts.append([s.x, s.y - 48, "SHIELDED", CYAN, 0.6])
         if dmg > 0:
             s.hp -= dmg
+            sound.play("hurt")
             if s.thorns and src is not None and getattr(src, "hp", 0) > 0 and not getattr(src, "is_boss", False) and getattr(src, "kind", "") != "dummy":
                 src.hp -= s.thorns; src.flash = 0.1  # reflected damage; the arena's update loop handles the kill
             a.texts.append([s.x, s.y - 40, f"-{dmg}", (255, 90, 90), 0.8]); a.burst(s.x, s.y - 16, RED, 6, 90); a.shake = 3

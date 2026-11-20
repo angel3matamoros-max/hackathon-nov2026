@@ -1,4 +1,5 @@
 """Surfaces, fonts and pixel-art drawing helpers. `canvas` is the current draw target (see use())."""
+import re
 import pygame
 from .config import *
 
@@ -49,7 +50,46 @@ def fit_lines(s, width, n=6):
     return out[:n]
 
 
+# ---- PS2 button glyphs: text() draws a token like "{cross}" as a little button shape instead of the letters
+GLYPH_W = 10
+TOKEN = re.compile(r"\{(\w+)\}")
+tiny = pygame.font.Font(None, 12)
+BTN_COL = dict(circle=(230, 70, 80), cross=(110, 150, 240), square=(220, 120, 210), triangle=(90, 210, 150))
+
+
+def glyph(name, x, y):
+    """Draw one PS2 button (8x8 box at x, y). Unknown names draw as a small labelled chip."""
+    if name in BTN_COL:
+        c = BTN_COL[name]
+        if name == "circle": pygame.draw.circle(canvas, c, (x + 4, y + 4), 4, 1)
+        elif name == "cross": pygame.draw.line(canvas, c, (x + 1, y + 1), (x + 7, y + 7), 2); pygame.draw.line(canvas, c, (x + 7, y + 1), (x + 1, y + 7), 2)
+        elif name == "square": pygame.draw.rect(canvas, c, (x + 1, y + 1, 6, 6), 1)
+        else: pygame.draw.polygon(canvas, c, [(x + 4, y + 1), (x + 7, y + 7), (x + 1, y + 7)], 1)
+    elif name in ("up", "down", "left", "right"):
+        pts = dict(up=[(x + 4, y + 1), (x + 7, y + 6), (x + 1, y + 6)], down=[(x + 4, y + 7), (x + 7, y + 2), (x + 1, y + 2)],
+                   left=[(x + 1, y + 4), (x + 6, y + 1), (x + 6, y + 7)], right=[(x + 7, y + 4), (x + 2, y + 1), (x + 2, y + 7)])[name]
+        pygame.draw.polygon(canvas, WHITE, pts)
+    else:
+        pygame.draw.rect(canvas, STEEL_D, (x, y, GLYPH_W - 2, 8), 1, border_radius=2)
+        lab = tiny.render({"start": "ST", "select": "SE"}.get(name, name.upper()[:2]), False, WHITE)
+        canvas.blit(lab, (x + (GLYPH_W - 2 - lab.get_width()) // 2, y + 1))
+
+
+def _rich(s, x, y, color, f, center, right):
+    parts = TOKEN.split(s)  # text, token, text, token, ...
+    w = sum(f.size(p)[0] if i % 2 == 0 else GLYPH_W for i, p in enumerate(parts))
+    x -= w // 2 if center else (w if right else 0)
+    gy = y + (f.get_height() - 8) // 2
+    for i, p in enumerate(parts):
+        if i % 2:
+            glyph(p, x, gy); x += GLYPH_W
+        elif p:
+            img, sh = f.render(p, False, color), f.render(p, False, INK)
+            canvas.blit(sh, (x + 1, y + 1)); canvas.blit(img, (x, y)); x += img.get_width()
+
+
 def text(s, x, y, color=WHITE, f=font, center=False, right=False):
+    if "{" in s: return _rich(s, x, y, color, f, center, right)
     img, sh = f.render(s, False, color), f.render(s, False, INK)
     x -= img.get_width() // 2 if center else (img.get_width() if right else 0)
     canvas.blit(sh, (x + 1, y + 1))
