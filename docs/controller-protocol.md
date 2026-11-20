@@ -89,3 +89,31 @@ The button and stick-click pins, and the joystick pins, are fixed by the firmwar
 - Calibration assumes the pad is level for the first second. Start with it still.
 - This was tested against the real board's data stream, but the gesture thresholds have not been tuned with a human hand yet.
 - The GY-521 gesture set in the earlier plan (a 100 Hz gyro sketch) is replaced by this firmware. The firmware in use is the source of truth.
+
+## PS2 controller (alternative to the accelerometer pad)
+
+Firmware: [arduino_ps2/arduino_ps2.ino](../arduino_ps2/arduino_ps2.ino). Wiring: DATA = pin 12, CMD = 11, ATT = 10, CLK = 13, power **3.3V**, GND. It speaks the PS2 protocol by bit-banging, so the Mega's SPI pins are not needed, and it puts the pad in analog mode.
+
+Wire format, about 50 lines a second at 115200 baud (the reader tells it apart from the other pad by the leading `P`):
+
+```
+P,b1,b2,rx,ry,lx,ly
+```
+
+`b1` bits (1 = pressed): SELECT, L3, R3, START, UP, RIGHT, DOWN, LEFT. `b2` bits: L2, R2, L1, R1, TRIANGLE, CIRCLE, CROSS, SQUARE. Sticks 0..255, centre 128 (`l*` left stick, `r*` right stick; the game uses the left).
+
+Default mapping (`PS2_MAP`, `PS2_DEADZONE`, `PS2_MENU_OK`, `PS2_MENU_BACK` in game/padbridge.py):
+
+| Control | Game action |
+|---|---|
+| Left stick / D-pad left, right | walk |
+| Left stick / D-pad down | drop through a platform |
+| Cross (X) | jump |
+| Square | attack, aimed by the stick or D-pad |
+| Circle | dash |
+| L1 / R1 | skill 1 / skill 2 |
+| L2 | block (held) |
+| Triangle | interact (chests, loot; held) |
+| Menus | stick / D-pad move, Start or X confirm, Select or Circle back |
+
+To remap, change a right-hand side of `PS2_MAP`, e.g. `jump="CIRCLE"`. Names: UP DOWN LEFT RIGHT, CROSS CIRCLE SQUARE TRIANGLE, L1 R1 L2 R2, L3 R3, START SELECT. The game has no pause key, so Start only confirms in menus. The right stick is read but not used.

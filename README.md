@@ -42,6 +42,10 @@ uv run python main.py --gallery      # enemy gallery: Y spawns every enemy and b
 
 The ELEGOO MEGA 2560 hand controller (joystick, two buttons, a stick click, and an accelerometer) drives **player 1** when it is plugged in. The game finds it automatically (`/dev/cu.usbmodem*`) and prints its status. The keyboard keeps working alongside it. `ROGUE_PAD=0` turns it off, and `ROGUE_PAD_PORT=/dev/...` picks another port.
 
+A **PS2 controller** on the same Mega also works (firmware in [arduino_ps2/](arduino_ps2/arduino_ps2.ino); wiring DATA 12, CMD 11, ATT 10, CLK 13, power 3.3V). Left stick or D-pad = walk and drop, X = jump, Square = attack, Circle = dash, L1 / R1 = skills, L2 = block, Triangle = interact; in menus Start or X confirms, Select or Circle goes back. The mapping is `PS2_MAP` at the top of [game/padbridge.py](game/padbridge.py).
+
+The on-screen hints (HUD, tutorial, loot and chest prompts) follow the controller in use: with the PS2 pad they read X / O / SQ / L1 and a `[PS2]` tag next to P1, with the Elegoo hand controller `[PAD]` and its control names, otherwise the keyboard keys.
+
 Run `.venv/bin/python main.py --pad-monitor` to see the raw values and every gesture, and to tune the thresholds. The full mapping, how the gestures work, and how to tune them are in [docs/controller-protocol.md](docs/controller-protocol.md).
 
 ## Controls
@@ -61,7 +65,7 @@ All keys can be rebound in **Settings**. Bindings are saved to `rogue_settings.j
 | Loot a corpse or the holy chest (hold) | `E` | `Enter` |
 | Gear screen (pauses the game, works in the tutorial too) | `I` | `O` |
 
-*Hand controller (player 1 when plugged in): stick = walk and jump (up) and drop (down), stick click = dash, button 1 / 2 = skills, a swing = attack, hold the pad up = shield, a shove = interact.*
+*Hand controller (player 1 when plugged in): stick = walk and jump (up) and drop (down), stick click = dash, button 1 / 2 = skills, a swing = attack, hold the pad up = shield, a shove = interact. PS2 controller: stick / D-pad = walk and drop, X = jump, Square = attack, Circle = dash, L1 / R1 = skills, L2 = block, Triangle = interact.*
 | Skip the tutorial or a cutscene | `Tab` (or the on-screen button in the tutorial) | `Tab` |
 
 **Menus:** `W`/`S` or `Up`/`Down` to move, `Enter` or `Space` to select, `Esc` to go back.
@@ -97,7 +101,7 @@ Menu ─┬─ Start ──► 1 or 2 players ──► Class select ──► [
 
 Each level runs like this:
 
-1. Enemies come in **waves**, one after another ("WAVE 2/3"). The next wave starts about 2.5 s after you clear the previous one. Foes spawn staggered from the screen edges, at most 8 alive at a time. Sometimes a cleared wave leaves a **supply cache** (35%, never after the last wave) that you can loot like a corpse.
+1. Enemies come in **waves**, one after another ("WAVE 2/3"). The next wave starts about 2.5 s after you clear the previous one. Foes spawn staggered from the screen edges, at most 8 alive at a time. Sometimes a cleared wave leaves a **supply cache** (35%, never after the last wave) that you can loot like a corpse. A beaten enemy that drops nothing vanishes after a moment; a looted corpse blinks out after about 2 s.
 2. When the last wave is cleared, the level's boss appears and all downed heroes are revived.
 3. Defeating the boss opens a portal (usable after a 1.5 s grace period). Loot the corpses, then walk right into the portal.
 4. A short cutscene shows the heroes climbing the castle to the next floor, then an intro card introduces the next level. Every cutscene can be skipped with `Tab`, `Esc`, or the slash key.
@@ -141,12 +145,12 @@ Levels are data-driven (the `LEVELS` list in [game/levels.py](game/levels.py)). 
 
 | # | Level | Waves (kind x count) | Boss | Boss HP |
 |---|---|---|---|---|
-| 1 | Castle Basement | 3 zombies / 2 zombies + 1 skeleton / 2 skeletons | Rotting Gravekeeper | 600 |
-| 2 | Overgrown Jungle | 2 bunnies + 1 wolf / 2 wolfmen + 1 catman / bunny + catman + wolf | Alpha Beastlord | 560 |
-| 3 | Holy Cathedral | 3 waves of 2 knights | Paladin Commander (boss chest has the **holy weapon**) | 560 |
-| 4 | Necropolis | 2 skeletons + zombie / lich + 2 zombies / lich + skeleton | The Archlich | 560 |
-| 5 | Mafia Penthouse | 2 gunmen / 2 wolves + gunman / gunman + brute | The Don | 560 |
-| 6 | Observatory Roof | 3 drones / 2 aliens + wolf / alien + wolf + lich | Alien Tycoon (name set by `ALIEN_NAME` in `config.py`) | 640 |
+| 1 | Castle Basement | 4 zombies / 3 zombies + 2 skeletons / 3 skeletons + zombie | Rotting Gravekeeper | 600 |
+| 2 | Overgrown Jungle | 3 bunnies + 2 wolves / 2 wolfmen + 2 catmen / 2 bunnies + 2 catmen + wolf | Alpha Beastlord | 560 |
+| 3 | Holy Cathedral | 3 waves of 3 knights | Paladin Commander (boss chest has the **holy weapon**) | 560 |
+| 4 | Necropolis | 3 skeletons + 2 zombies / 2 liches + 2 zombies / 2 liches + 2 skeletons | The Archlich | 560 |
+| 5 | Mafia Penthouse | 3 gunmen / 2 wolves + 2 gunmen / 2 gunmen + 2 brutes | The Don | 560 |
+| 6 | Observatory Roof | 4 drones / 3 aliens + 2 wolves / 2 aliens + 2 wolves + lich | Alien Tycoon (name set by `ALIEN_NAME` in `config.py`) | 640 |
 
 **Bosses** are big (about 2.5x the size of a hero, with a cape, mane, halo or saucer drawn on top) and enter from the right with a name card, immune for about 2 s. They run a pattern script: rest, then a telegraphed wind-up (the boss flashes), then the attack. Patterns unlock by phase (above 66% HP, above 33%, below that). Each phase change shows "ENRAGED!" and speeds the boss up. A status line under the boss's health bar tells you what to do. Every boss has a signature mechanic built on **props** (breakable objects, [game/props.py](game/props.py)):
 
@@ -212,7 +216,7 @@ game/
   devmode.py            Developer-mode keys and overlay
   items.py              Gear: slots, rarities, effects, item rolling and descriptions
   loot.py               Loot mini-games, holy chest weapons
-  padbridge.py          Hand controller: serial reader thread, gesture logic (PadState), PadMotion, --pad-monitor
+  padbridge.py          Hand controller: serial reader thread, gesture logic (PadState), PadMotion, Ps2State (PS2 pad), --pad-monitor
   castle.py             Castle Maker data: validation, building levels, saving and loading castles
   maker.py              Castle Maker editor (rows and values) and its screens
   scroll.py             Floor, pit and camera helpers for side-scrolling levels (not wired in yet)
@@ -253,6 +257,7 @@ docs/controller-protocol.md   The hand controller: wire format, mapping, gesture
 - `test_chest`: 75 / 25 holy-or-cursed roll over 20,000 rolls, curse effects, take / leave flow, gear carried to the next level.
 - `test_flow`: skip tutorial (key and click), cutscene flow, retry, victory, every dev-mode key.
 - `test_cutscenes_input`: cutscenes finish and skip; `FakeMotion` has the same fields as `Motion`; gameplay modules never read the keyboard (the input seam).
+- `test_ps2`: the PS2 pad's line parsing, presses, stick and D-pad, the default map, remapping and menu keys, without hardware.
 - `test_padbridge`: the hand controller's logic on recorded sample streams (calibration, debounce, hysteresis, swings, shove, shield, menu keys), without hardware.
 - `test_campaign`: a bot plays the whole campaign through the real `Game` loop to the victory screen; and checks the content is winnable with the difficulty multipliers off.
 

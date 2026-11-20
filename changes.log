@@ -18,6 +18,13 @@
 [2026-11-17] docs: corrected mini-game descriptions in README.md
   files: README.md
   why:   the first draft guessed three mini-game descriptions. Replaced them with the in-game hint text from game/loot.py.
+
+[2026-11-19] feat: Arduino firmware for Wii Nunchuck controller
+  files: arduino_nunchuck/arduino_nunchuck.ino
+  why:   enable Rock Candy Wii Nunchuck as alternative input device for player 1 on Arduino Mega 2560
+  notes: firmware reads C/Z buttons and joystick, sends CSV format matching padbridge expectations.
+         Connections: pin 20 (SDA), pin 21 (SCL), 5V, GND. Maps C→btn1, Z→btn2, stick→jx/jy.
+         Ready to upload to Mega 2560 and test with --pad-monitor.
   notes: also merged two overlapping "Known issues" items about the unimplemented --dev flag into one.
 
 [2026-11-17] docs: added AGENTS.md and changes.log
@@ -201,3 +208,32 @@
   files: n/a
   why:   owner asked to save the work and update it on GitHub.
   notes: 292 tests and ruff passed immediately before the commit. Includes the Castle Maker, pad bridge, scroll/ally/items/props modules, new tests and qa/REPORT.md.
+
+[2026-11-20] feat: PS2 controller backend for player 1 (D-pad / left stick walk, X jump, Square attack, Circle dash, L1/R1 skills, L2 block, Triangle interact)
+  files: game/padbridge.py, arduino_ps2/arduino_ps2.ino (new), tests/test_ps2.py (new), docs/controller-protocol.md, README.md
+  why:   owner swapped the Wii nunchuck for a PS2 pad on the Mega (DATA 12, CMD 11, ATT 10, CLK 13, 3.3V) and chose the platformer layout. PadReader now also parses "P,b1,b2,rx,ry,lx,ly" lines into Ps2State; PadMotion merges them with the existing pad and keyboard; PS2_MAP is the editable mapping.
+  notes: the nunchuck path is unchanged. Start and X confirm in menus, Select and Circle go back (the game has no pause key). Tested with synthetic samples (tests/test_ps2.py); end-to-end with the real pad still to be confirmed by playing.
+
+[2026-11-20] fix: correction to the 2026-11-19 nunchuck firmware entry (it sits inside an older entry above, not at the bottom)
+  files: changes.log, arduino_nunchuck/arduino_nunchuck.ino
+  why:   that entry says the nunchuck connects to 5V; the original Wii nunchuck is a 3.3V part. Its real contact order (connector seen from the front) is top row SCL, GND and bottom row 3.3V, SDA. It was never made to read on the owner's unit: the bus timed out with it connected while another I2C device (0x68) scanned fine, so the nunchuck or its adapter is suspect. The entry was not edited (the log is append only).
+
+[2026-11-20] feat: longer waves (1-2 more foes per wave in all six levels)
+  files: game/levels.py, README.md
+  why:   owner asked for longer waves. Counts raised in every wave of every level (e.g. level 1: 4 / 3+2 / 3+1 zombies and skeletons); MAX_ALIVE stays 8 so the screen is not swamped.
+  notes: more foes means a harder run; qa/balance.py should be re-read for levels 4-6, which were already steep (see Known issues).
+
+[2026-11-20] feat: dead enemies disappear (corpses fade out)
+  files: game/arena.py, README.md
+  why:   owner asked that a dead enemy must disappear. Corpses now carry fade_t: no-drop foes vanish after 0.8 s, looted corpses (player or CPU, success or fail) blink out after 2 s, unlooted droppers stay until looted.
+  notes: the supply cache dict also got fade_t so the update loop never hits a missing key.
+
+[2026-11-20] feat: UI follows the detected controller
+  files: game/config.py, game/padbridge.py, game/arena.py, README.md
+  why:   owner asked the UI to match the controller. config.PAD holds per-player label dicts set every frame by PadMotion (PS2 pad, Elegoo pad, or None = keyboard); kn() returns them, so HUD skill hints, tutorial, loot and chest prompts show pad names, and the HUD tags P1 as [PS2] / [PAD].
+  notes: ruff, pytest and --selftest pass. Not tried with real hardware. Fixed menu hint strings (W/S, Enter) still show keyboard keys.
+
+[2026-11-20] git: commit and push longer waves, corpse fade, controller-aware UI, and the PS2/nunchuck work
+  files: n/a
+  why:   owner asked to commit and push after the QA run. QA (ruff, pytest, selftest, qa/run_qa.py 7/7) passed; the qa agent found no blocking defects. Boss corpse now vanishes after 0.8 s (the boss chest is separate). Balance with multipliers on: L5 42%, L6 17% for the careful bot (4 seeds, noisy).
+  notes: the commit also includes the previously uncommitted PS2 backend, arduino_ps2/, arduino_nunchuck/, tests/test_ps2.py and docs.

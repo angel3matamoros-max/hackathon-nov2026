@@ -133,7 +133,7 @@ class Arena:
     def kill(s, e):
         s.enemies.remove(e); s.kills += 1
         drop = s.tut or random.random() < e.d.get("drop", 0.3) * s.drop_mult  # only some foes leave something worth looting
-        s.corpses.append(dict(x=e.x, y=FLOOR if is_flyer(e.kind) else e.y, kind=e.kind, tint=e.tint, hold=0.0, looted=not drop or e.is_boss, plain=not drop or e.is_boss, boss=e.is_boss))
+        s.corpses.append(dict(x=e.x, y=FLOOR if is_flyer(e.kind) else e.y, kind=e.kind, tint=e.tint, hold=0.0, looted=not drop or e.is_boss, plain=not drop or e.is_boss, boss=e.is_boss, fade_t=0.0 if drop and not e.is_boss else 0.8))
         s.burst(e.x, e.y - 10, (230, 230, 230), 16, 120); s.shake = 5
         if e.is_boss: e.beam_t = 0.0; s.boss_defeated(e)
 
@@ -166,7 +166,7 @@ class Arena:
             s.texts.append([W // 2, 96, "WAVE CLEARED", GOLD, 1.6])
             if random.random() < CACHE_CHANCE * s.drop_mult:  # sometimes the fallen leave a supply cache
                 x = float(random.randint(120, W - 120))
-                s.corpses.append(dict(x=x, y=FLOOR, kind="cache", tint=0, hold=0.0, looted=False, plain=False, boss=False))
+                s.corpses.append(dict(x=x, y=FLOOR, kind="cache", tint=0, hold=0.0, looted=False, plain=False, boss=False, fade_t=0.0))
                 s.texts.append([x, FLOOR - 50, "SUPPLY CACHE!", CYAN, 2.0])
 
     # ---- gear
@@ -395,7 +395,7 @@ class Arena:
     # ---- loot mini-game
     def start_loot(s, p, c):
         if p.cpu:  # the CPU ally never opens a mini-game (it would freeze the human): it just gets an average roll
-            c["looted"] = True; s.looted += 1
+            c["looted"] = True; c["fade_t"] = 2.0; s.looted += 1
             s.give(p, roll_item(0.5 + (0.3 if c.get("boss") or c["kind"] == "cache" else 0.0)))
             return
         m = random.choice(MINIS)()
@@ -414,13 +414,13 @@ class Arena:
             if L["after"] > 1.3:
                 p, c = L["p"], L["c"]
                 if m.score >= 0.4:
-                    c["looted"] = True
+                    c["looted"] = True; c["fade_t"] = 2.0
                     s.looted += 1
                     s.give(p, roll_item(min(1.0, m.score + (0.3 if c.get("boss") or c["kind"] == "cache" else 0.0))))
                 else:
                     c["hold"] = 0.0
                     if not s.tut:
-                        c["looted"] = True
+                        c["looted"] = True; c["fade_t"] = 2.0
                     s.texts.append([c["x"], c["y"] - 34, "Failed - no loot!" + (" Try again!" if s.tut else ""), RED, 2.2])
                 s.state, s.loot = "play", None
 
@@ -534,8 +534,11 @@ class Arena:
                         s.hit_radius(pr["x"], pr["y"], 28, pr["dmg"], 160, by=pr.get("by"))
                         s.burst(pr["x"], pr["y"], (255, 160, 50), 20, 140)
                     s.projs.remove(pr)
-        for c in s.corpses:
-            if c["looted"]: continue
+        for c in s.corpses[:]:
+            if c["looted"]:
+                c["fade_t"] -= dt
+                if c["fade_t"] <= 0: s.corpses.remove(c)
+                continue
             who = [p for p in s.players if not p.down and mo[p.i].interact_h and abs(p.x - c["x"]) < 26 and abs(p.y - c["y"]) < 30]
             c["hold"] = c["hold"] + dt if who else max(0, c["hold"] - 2 * dt)
             if who and c["hold"] >= 0.5:
@@ -644,7 +647,7 @@ class Arena:
     def draw_hud(s):
         for p in s.players:
             x, d = (8 if p.i == 0 else W - 128), CLASSES[p.cls]
-            text(f"P{p.i + 1} {p.cls}" + (" (CPU)" if p.cpu else ""), x, 6, P_COL[p.i])
+            text(f"P{p.i + 1} {p.cls}" + (" (CPU)" if p.cpu else f" [{PAD[p.i]['_name']}]" if PAD[p.i] else ""), x, 6, P_COL[p.i])
             bar(x, 19, 120, 7, p.hp / p.maxhp, RED if p.hp > p.maxhp * .3 else (255, 120, 40))
             if p.shield > 0:
                 bar(x, 19, int(120 * min(1.0, p.shield / 30.0)), 3, 1.0, CYAN)
@@ -705,6 +708,7 @@ class Arena:
             else:
                 fr = CORPSE[(c["kind"], c["tint"] if c["kind"] == "slime" else 0)]
                 blit_ent(fr, c["x"], c["y"], False, (-60, -60, -60) if (c["looted"] and not c.get("plain")) else None)
+                if c["looted"] and c["fade_t"] < 0.4 and int(s.t * 20) % 2: continue  # blink out
             if not c["looted"]:
                 gy = c["y"] - 26 + math.sin(s.t * 4 + c["x"]) * 3
                 glow(c["x"], gy, 18, (110, 90, 30)); gem(int(c["x"]), int(gy), GOLD, 5)

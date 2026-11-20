@@ -20,6 +20,7 @@ import time
 
 import pygame
 
+from .config import PAD
 from .inputs import Motion
 
 # ============================================================ CONFIGURATION (tune and remap here)
@@ -41,6 +42,19 @@ SHOVE_HOLD = 0.6                       # a shove holds the interact key for this
 
 # Which control drives which game action. Controls: joy_up, joy_down, joy_click, btn1, btn2, shield (tilt up), attack (swing),
 # shove (the thrust gesture). Change a right-hand side to remap, e.g. boost="btn1" to make button 1 the dash.
+PAD_NAMES = dict(joy_up="JOY UP", joy_down="JOY DOWN", joy_click="JOY CLICK", btn1="BTN1", btn2="BTN2", shield="PAD UP", attack="SWING", shove="SHOVE")
+PS2_NAMES = dict(CROSS="X", CIRCLE="O", SQUARE="SQ", TRIANGLE="TRI", UP="UP", DOWN="DOWN")
+
+
+def control_labels(ps2):
+    """Names shown in the UI for each action, for the controller that is sending data (PS2 pad or the Elegoo hand controller)."""
+    if ps2:
+        L = {a: PS2_NAMES.get(PS2_MAP[k], PS2_MAP[k]) for a, k in (("jump", "jump"), ("down", "down"), ("dash", "boost"), ("cast", "ability1"), ("cast2", "ability2"), ("block", "block"), ("slash", "slash"), ("interact", "interact"))}
+        return dict(L, left="LEFT", right="RIGHT", _name="PS2")
+    L = {a: PAD_NAMES.get(MAP[k], MAP[k]) for a, k in (("jump", "jump"), ("down", "down"), ("dash", "boost"), ("cast", "ability1"), ("cast2", "ability2"), ("block", "block"), ("slash", "slash"), ("interact", "interact"))}
+    return dict(L, left="SWING L", right="SWING R", _name="PAD")
+
+
 MAP = dict(
     jump="joy_up",         # jump (held = jump higher, edge = jump)
     down="joy_down",       # drop through a platform / fast-fall
@@ -54,7 +68,26 @@ MAP = dict(
 INTERACT_CONTROL = "shove"  # the gesture name used for the "interact" control
 BUTTON_CONTROLS = ("joy_up", "joy_down", "joy_click", "btn1", "btn2")
 PRINT_EVENTS = True         # print each gesture / button press to the terminal ("Calibrating...", "Ready!", "SWING!", ...)
+
+# PS2 controller (firmware arduino_ps2/, lines "P,b1,b2,rx,ry,lx,ly"). Button names: UP DOWN LEFT RIGHT (D-pad or left stick), CROSS CIRCLE SQUARE
+# TRIANGLE, L1 R1 L2 R2, L3 R3 (stick clicks), START SELECT. Change a right-hand side to remap, e.g. jump="CIRCLE".
+PS2_MAP = dict(
+    jump="CROSS",          # jump (held = higher, edge = jump)
+    down="DOWN",           # drop through a platform / fast-fall (D-pad down or left stick down)
+    boost="CIRCLE",        # dash
+    ability1="L1",         # skill 1
+    ability2="R1",         # skill 2
+    block="L2",            # block (held)
+    slash="SQUARE",        # attack (aimed by the D-pad / stick, else the way you face)
+    interact="TRIANGLE",   # open chests / loot (held)
+)
+PS2_DEADZONE = 40          # the left stick counts as pushed this far from its centre (128), out of 127
+PS2_MENU_OK = ("START", "CROSS")         # confirm in menus
+PS2_MENU_BACK = ("SELECT", "CIRCLE")     # back in menus (the pad has no Esc)
 # ============================================================
+
+PS2_BITS1 = ("SELECT", "L3", "R3", "START", "UP", "RIGHT", "DOWN", "LEFT")
+PS2_BITS2 = ("L2", "R2", "L1", "R1", "TRIANGLE", "CIRCLE", "CROSS", "SQUARE")
 
 
 def parse_line(line):
@@ -71,6 +104,57 @@ def parse_line(line):
     if b1 not in (0, 1) or b2 not in (0, 1) or jsw not in (0, 1): return None
     if not (0 <= jx <= 1023 and 0 <= jy <= 1023): return None
     return v
+
+
+def parse_ps2_line(line):
+    """Return (b1, b2, rx, ry, lx, ly) from a PS2 line "P,b1,b2,rx,ry,lx,ly" (button bits: 1 = pressed; sticks 0..255, centre 128), or None."""
+    try:
+        if isinstance(line, bytes): line = line.decode("ascii", "ignore")
+        parts = line.strip().split(",")
+        if len(parts) != 7 or parts[0] != "P": return None
+        v = tuple(int(p) for p in parts[1:])
+    except ValueError:
+        return None
+    return v if all(0 <= a <= 255 for a in v) else None
+
+
+class Ps2State:
+    """PS2 controller logic: held buttons, one-frame pulses on each press, and the walk axis. Same snapshot() contract as PadState.
+    The D-pad and the left stick both feed UP / DOWN / LEFT / RIGHT."""
+
+    def __init__(s):
+        s.lock = threading.Lock()
+        s.held, s.pulses, s.axis, s.log = set(), {}, 0, []
+        s.prev, s.raw, s.bad, s.samples = None, None, 0, 0
+
+    def feed(s, sample, now=None):
+        b1, b2, rx, ry, lx, ly = sample
+        with s.lock:
+            s.raw, s.samples = sample, s.samples + 1
+            held = {n for i, n in enumerate(PS2_BITS1) if (b1 >> i) & 1} | {n for i, n in enumerate(PS2_BITS2) if (b2 >> i) & 1}
+            if lx < 128 - PS2_DEADZONE: held.add("LEFT")
+            if lx > 128 + PS2_DEADZONE: held.add("RIGHT")
+            if ly < 128 - PS2_DEADZONE: held.add("UP")
+            if ly > 128 + PS2_DEADZONE: held.add("DOWN")
+            if s.prev is None:
+                if PRINT_EVENTS: s.log.append("PS2 controller ready.")
+            else:
+                for n in held - s.prev:
+                    s.pulses[n] = True
+                    if PRINT_EVENTS: s.log.append(n)
+            s.prev, s.held = held, held
+            s.axis = int("RIGHT" in held) - int("LEFT" in held)
+
+    def snapshot(s):
+        with s.lock:
+            held, pulses = set(s.held), dict(s.pulses)
+            s.pulses = {}
+            return held, pulses, s.axis
+
+    def drain_log(s):
+        with s.lock:
+            out, s.log = s.log, []
+            return out
 
 
 class PadState:
@@ -203,7 +287,7 @@ class PadReader(threading.Thread):
 
     def __init__(s, port, state=None):
         super().__init__(daemon=True, name="pad-reader")
-        s.port, s.state = port, state or PadState()
+        s.port, s.state, s.ps2 = port, state or PadState(), Ps2State()
         s.connected, s.stop_flag, s.report = False, False, None
 
     def _report(self, msg):
@@ -217,10 +301,17 @@ class PadReader(threading.Thread):
                     s.connected = True
                     if s.report != "ok":
                         s.report = "ok"
-                        s._report(f"Hand controller on {s.port}.  Calibrating... keep it level for about one second.")
+                        s._report(f"Hand controller on {s.port}.  (Wii/accelerometer pad: keep it level for about one second while it calibrates.)")
                     while not s.stop_flag:
                         line = ser.readline()
                         if not line: continue
+                        if line.startswith(b"P,"):  # PS2 firmware line
+                            ps = parse_ps2_line(line)
+                            if ps is None: s.ps2.bad += 1
+                            else:
+                                s.ps2.feed(ps)
+                                for msg in s.ps2.drain_log(): s._report("  " + msg)
+                            continue
                         sample = parse_line(line)
                         if sample is None:
                             s.state.bad += 1
@@ -272,7 +363,33 @@ class PadMotion(Motion):
         if "left" in pulses: m.append(pygame.K_LEFT)
         if "right" in pulses: m.append(pygame.K_RIGHT)
         if "btn1" in pulses: m.append(pygame.K_RETURN)
+        ps2 = getattr(s.reader, "ps2", None)
+        if ps2 is not None and ps2.samples:
+            held, pulses, axis = ps2.snapshot()
+            h = lambda action: PS2_MAP[action] in held
+            p = lambda action: PS2_MAP[action] in pulses
+            if axis: s.axis = axis
+            s.jump_h = s.jump_h or h("jump")
+            s.down_h = s.down_h or h("down")
+            s.block_h = s.block_h or h("block")
+            s.interact_h = s.interact_h or h("interact")
+            s.jump_p = s.jump_p or p("jump")
+            s.down_p = s.down_p or p("down")
+            s.dash_p = s.dash_p or p("boost")
+            s.cast_p = s.cast_p or p("ability1")
+            s.cast2_p = s.cast2_p or p("ability2")
+            if p("slash"):
+                s.slash_p = s.flick = True
+                s.shake = min(1, s.shake + 0.15)
+                s.swing = "right" if "RIGHT" in held else "left" if "LEFT" in held else "up" if "UP" in held else "down" if "DOWN" in held else s.swing
+            if "LEFT" in pulses: s.swing = "left"
+            if "RIGHT" in pulses: s.swing = "right"
+            for name, key in (("UP", pygame.K_UP), ("DOWN", pygame.K_DOWN), ("LEFT", pygame.K_LEFT), ("RIGHT", pygame.K_RIGHT)):
+                if name in pulses: m.append(key)
+            if any(n in pulses for n in PS2_MENU_OK): m.append(pygame.K_RETURN)
+            if any(n in pulses for n in PS2_MENU_BACK): m.append(pygame.K_ESCAPE)
         s._menu = m
+        PAD[s.i] = control_labels(bool(ps2 is not None and ps2.samples)) if getattr(s.reader, "connected", True) else None  # the UI follows the controller in use
 
     def menu_keys(s):
         return s._menu
@@ -312,6 +429,11 @@ def monitor(port=None):
             st = reader.state
             with st.lock:
                 raw, base, held, axis = st.raw, st.base, sorted(st.held), st.axis
+            if reader.ps2.samples:
+                with reader.ps2.lock:
+                    praw, pheld, paxis = reader.ps2.raw, sorted(reader.ps2.held), reader.ps2.axis
+                print(f"  PS2 connected={reader.connected} samples={reader.ps2.samples} bad={reader.ps2.bad} raw={praw} held={pheld} walk={paxis:+d}", flush=True)
+                continue
             print(f"  connected={reader.connected} samples={st.samples} bad={st.bad} raw={raw} base={tuple(round(b) for b in base) if base else '-'} "
                   f"held={held} walk={axis:+d}", flush=True)
     except KeyboardInterrupt:

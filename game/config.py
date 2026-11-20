@@ -61,7 +61,11 @@ def save_settings():
         pass
 
 
+PAD = [None, None]  # per player: the label dict of the hand controller driving them right now (set by padbridge.PadMotion), None = keyboard
+
+
 def kn(p, a):
+    if PAD[p] and a in PAD[p]: return PAD[p][a]
     return pygame.key.name(SET["keys"][p][a]).upper()
 
 
